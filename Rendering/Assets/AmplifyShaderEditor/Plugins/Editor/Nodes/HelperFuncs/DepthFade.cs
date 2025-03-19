@@ -61,12 +61,20 @@ namespace AmplifyShaderEditor
 				}
 			}
 
-			string screenPosNorm = string.Empty;
+			string screenPosNorm;
 			InputPort vertexPosPort = GetInputPortByUniqueId( 1 );
 			if( vertexPosPort.IsConnected )
 			{
 				string vertexPosVar = "vertexPos" + OutputId;
-				GenerateInputInVertex( ref dataCollector, 1, vertexPosVar, false );
+				if ( dataCollector.IsTemplate || !dataCollector.TesselationActive )
+				{
+					GenerateInputInVertex( ref dataCollector, 1, vertexPosVar, false );
+				}
+				else
+				{
+					// @diogo: surface shader + tessellation? can't add interpolators, so generate everything in fragment
+					vertexPosVar = vertexPosPort.GeneratePortInstructions( ref dataCollector );
+				}
 				screenPosNorm = GeneratorUtils.GenerateScreenPositionNormalizedForValue( vertexPosVar, OutputId, ref dataCollector, UniqueId, CurrentPrecisionType, !dataCollector.UsingCustomScreenPos );
 			}
 			else

@@ -986,7 +986,7 @@ namespace AmplifyShaderEditor
 				m_undoHelper.Clear();
 				m_undoHelper = null;
 			}
-			ASEMaterialInspector.Instance = null;
+			MaterialInspector.Instance = null;
 		}
 
 		public static void ResetMainSkin()
@@ -1192,6 +1192,29 @@ namespace AmplifyShaderEditor
 				MaskingShader = AssetDatabase.LoadAssetAtPath<Shader>( AssetDatabase.GUIDToAssetPath( "9c34f18ebe2be3e48b201b748c73dec0" ) ); //masking shader
 			if( Texture2DShader == null )
 				Texture2DShader = AssetDatabase.LoadAssetAtPath<Shader>( AssetDatabase.GUIDToAssetPath( "13bd295c44d04e1419f20f792d331e33" ) ); //texture2d shader
+		}
+
+		public static void SetPreviewShaderConstants()
+		{
+			var worldCameraPos = new Vector3( 0, 0, -5 );
+			var objectToWorldMatrix = Matrix4x4.identity;
+			var worldToObjectMatrix = Matrix4x4.identity;
+			var viewMatrix = new Matrix4x4(
+				new Vector4( 1, 0, 0, 0 ),
+				new Vector4( 0, 1, 0, 0 ),
+				new Vector4( 0, 0,-1,-1 ),
+				new Vector4( 0, 0, 0, 1 ) );
+			var viewMatrixInv = new Matrix4x4(
+				new Vector4( 1, 0, 0, 0 ),
+				new Vector4( 0, 1, 0, 0 ),
+				new Vector4( 0, 0,-1, 0 ),
+				new Vector4( 0, 0,-1, 1 ) );
+
+			Shader.SetGlobalVector( "preview_WorldSpaceCameraPos", worldCameraPos ); ;
+			Shader.SetGlobalMatrix( "preview_WorldToObject", worldToObjectMatrix );
+			Shader.SetGlobalMatrix( "preview_ObjectToWorld", objectToWorldMatrix );
+			Shader.SetGlobalMatrix( "preview_MatrixV", viewMatrix );
+			Shader.SetGlobalMatrix( "preview_MatrixInvV", viewMatrixInv );
 		}
 
 		private static void FetchMenuItemStyles()
@@ -1496,7 +1519,7 @@ namespace AmplifyShaderEditor
 		public static string GetInputValueFromType( SurfaceInputs inputType ) { return m_inputTypeName[ inputType ]; }
 		private static string CreateLocalValueName( PrecisionType precision , WirePortDataType dataType , string localOutputValue , string value ) { return string.Format( Constants.LocalValueDecWithoutIdent , PrecisionWirePortToCgType( precision , dataType ) , localOutputValue , value ); }
 
-		public static string CastPortType( ref MasterNodeDataCollector dataCollector , PrecisionType nodePrecision , NodeCastInfo castInfo , object value , WirePortDataType oldType , WirePortDataType newType , string parameterName = null )
+		public static string CastPortType( ref MasterNodeDataCollector dataCollector , PrecisionType nodePrecision , object value , WirePortDataType oldType , WirePortDataType newType , string parameterName = null )
 		{
 			if( oldType == newType || newType == WirePortDataType.OBJECT )
 			{
@@ -1508,7 +1531,7 @@ namespace AmplifyShaderEditor
 			string newTypeStr = m_wirePortToCgType[ newType ];
 			newTypeStr = m_textInfo.ToTitleCase( newTypeStr );
 			int castId = ( dataCollector.PortCategory == MasterNodePortCategory.Vertex || dataCollector.PortCategory == MasterNodePortCategory.Tessellation ) ? dataCollector.AvailableVertexTempId : dataCollector.AvailableFragTempId;
-			string localVarName = "temp_cast_" + castId;//m_wirePortToCgType[ oldType ] + "To" + newTypeStr + "_" + castInfo.ToString();
+			string localVarName = "temp_cast_" + castId;
 			string result = string.Empty;
 			bool useRealValue = ( parameterName == null );
 
@@ -3171,7 +3194,7 @@ namespace AmplifyShaderEditor
 					}
 				}
 			}
-			
+
 			if ( drawColorSwatchMI != null )
 			{
 				drawColorSwatchMI.Invoke( obj, new object[] { position, color, showAlpha, hdr } );

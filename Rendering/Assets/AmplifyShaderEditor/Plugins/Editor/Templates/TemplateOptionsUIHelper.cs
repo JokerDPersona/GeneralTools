@@ -79,7 +79,7 @@ namespace AmplifyShaderEditor
 		public void DrawCustomOptions( TemplateMultiPassMasterNode owner )
 		{
 			m_owner = owner;
-			
+
 			if( m_passCustomOptionsUI.Count > 0 )
 			{
 				NodeUtils.DrawNestedPropertyGroup( ref m_passCustomOptionsFoldout, m_passCustomOptionsLabel, DrawCustomOptionsBlock );
@@ -121,11 +121,40 @@ namespace AmplifyShaderEditor
 			return port;
 		}
 
-		public void OnCustomOptionSelected( bool actionFromUser, bool isRefreshing, bool invertAction, TemplateMultiPassMasterNode owner, TemplateOptionUIItem uiItem, params TemplateActionItem[] validActions )
+		private bool TestActionItemConditional( TemplateActionItem actionItem )
+		{
+			bool succeeded = true;
+			TemplateActionItemConditional conditional = actionItem.ActionConditional;
+			if ( conditional != null && conditional.IsValid )
+			{
+				TemplateOptionUIItem referenceItem = m_passCustomOptionsUI.Find( x => ( x.Options.Name.Equals( conditional.Option ) ) );
+				if ( referenceItem != null )
+				{
+					bool equal = conditional.Value.Equals( referenceItem.Options.Options[ referenceItem.CurrentOption ] );
+					if ( conditional.Condition == TemplateActionItemConditional.Conditional.Equal )
+					{
+						succeeded = equal;
+					}
+					else if ( conditional.Condition == TemplateActionItemConditional.Conditional.NotEqual )
+					{
+						succeeded = !equal;
+					}
+				}
+			}
+			return succeeded;
+		}
+
+		public void OnCustomOptionSelected( bool actionFromUser, bool isRefreshing, bool invertAction, TemplateMultiPassMasterNode owner, TemplateOptionUIItem uiItem, int recursionLevel, params TemplateActionItem[] validActions )
 		{
 			uiItem.CheckOnExecute = false;
 			for( int i = 0; i < validActions.Length; i++ )
 			{
+				// @diogo: test conditional before running
+				if ( !TestActionItemConditional( validActions[ i ] ) )
+				{
+					continue;
+				}
+
 				AseOptionsActionType actionType = validActions[ i ].ActionType;
 				if( invertAction )
 				{
@@ -135,9 +164,24 @@ namespace AmplifyShaderEditor
 					}
 				}
 
-
 				switch( actionType )
 				{
+					case AseOptionsActionType.RefreshOption:
+					{
+						if ( !uiItem.IsVisible || recursionLevel > 0 )
+							break;
+
+						TemplateOptionUIItem item = m_passCustomOptionsUI.Find( x => ( x.Options.Name.Equals( validActions[ i ].ActionData ) ) );
+						if ( item != null )
+						{
+							item.Update( recursionLevel + 1, isRefreshing );
+						}
+						else
+						{
+							Debug.LogFormat( "Could not find Option {0} for action '{1}' on template {2}", validActions[ i ].ActionData, validActions[ i ].ActionType, owner.CurrentTemplate.DefaultShaderName );
+						}
+					}
+					break;
 					case AseOptionsActionType.ShowOption:
 					{
 						TemplateOptionUIItem item = m_passCustomOptionsUI.Find( x => ( x.Options.Name.Equals( validActions[ i ].ActionData ) ) );
@@ -200,7 +244,7 @@ namespace AmplifyShaderEditor
 						if( item != null )
 						{
 							item.CurrentOption = validActions[ i ].ActionDataIdx;
-							item.Update( isRefreshing );
+							item.Update( recursionLevel, isRefreshing );
 						}
 						else
 						{
@@ -604,13 +648,13 @@ namespace AmplifyShaderEditor
 					break;
 					case AseOptionsActionType.SetShaderProperty:
 					{
-						//This action is only check when shader is compiled over 
+						//This action is only check when shader is compiled over
 						//the TemplateMultiPassMasterNode via the on CheckPropertyChangesOnOptions() method
 					}
 					break;
 					case AseOptionsActionType.ExcludeAllPassesBut:
 					{
-						//This action is only check when shader is compiled over 
+						//This action is only check when shader is compiled over
 						//the TemplateMultiPassMasterNode via the on CheckExcludeAllPassOptions() method
 					}
 					break;
@@ -632,8 +676,8 @@ namespace AmplifyShaderEditor
 								else
 									owner.ContainerGraph.CurrentMaterial.SetInt( prop, (int)uiItem.CurrentFieldValue );
 
-								if( ASEMaterialInspector.Instance != null )
-									ASEMaterialInspector.Instance.Repaint();
+								if( MaterialInspector.Instance != null )
+									MaterialInspector.Instance.Repaint();
 							}
 						}
 					}
@@ -778,7 +822,7 @@ namespace AmplifyShaderEditor
 			if( masterNode == null )
 				return;
 
-			
+
 			//for( int i = 0; i < m_passCustomOptionsPorts.Count; i++ )
 			//{
 			//	if( string.IsNullOrEmpty( m_passCustomOptionsPorts[ i ].Options.Id ) ||
@@ -787,10 +831,10 @@ namespace AmplifyShaderEditor
 			//		m_passCustomOptionsPorts[ i ].FillDataCollector( masterNode, ref dataCollector );
 			//	}
 			//}
-			
+
 			for( int i = 0; i < m_passCustomOptionsPorts.Count; i++ )
-			{	
-				m_passCustomOptionsPorts[ i ].SubShaderFillDataCollector( masterNode, ref dataCollector );	
+			{
+				m_passCustomOptionsPorts[ i ].SubShaderFillDataCollector( masterNode, ref dataCollector );
 			}
 		}
 
@@ -895,7 +939,7 @@ namespace AmplifyShaderEditor
 				m_passCustomOptionsUI[ i ].CheckEnDisable(false);
 			}
 		}
-	
+
 		public List<TemplateOptionUIItem> PassCustomOptionsUI { get { return m_passCustomOptionsUI; } }
 	}
 }

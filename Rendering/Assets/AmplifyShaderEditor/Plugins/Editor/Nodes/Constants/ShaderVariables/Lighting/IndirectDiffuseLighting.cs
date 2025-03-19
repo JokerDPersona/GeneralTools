@@ -20,21 +20,67 @@ namespace AmplifyShaderEditor
 
 		private const string FwdBasePragma = "#pragma multi_compile_fwdbase";
 
-		private readonly string LWIndirectDiffuseHeader = "ASEIndirectDiffuse( {0}, {1})";
-		private readonly string[] LWIndirectDiffuseBody =
+		private readonly string IndirectDiffuseHeaderURP10 = "ASEIndirectDiffuse( {0}, {1} )";
+		private readonly string[] IndirectDiffuseBodyURP10 =
 		{
-			"float3 ASEIndirectDiffuse( float2 uvStaticLightmap, float3 normalWS )\n",
+			"half3 ASEIndirectDiffuse( PackedVaryings input, half3 normalWS, float3 positionWS = 0, half3 viewDirWS = 0 )\n",
 			"{\n",
-			"#ifdef LIGHTMAP_ON\n",
-			"\treturn SampleLightmap( uvStaticLightmap, normalWS );\n",
+			"#if defined( LIGHTMAP_ON )\n",
+			"\treturn SampleLightmap( input.lightmapUVOrVertexSH.xy, normalWS );\n",
 			"#else\n",
-			"\treturn SampleSH(normalWS);\n",
+			"\treturn SampleSH( normalWS );\n",
 			"#endif\n",
 			"}\n"
 		};
 
-		//void MixRealtimeAndBakedGI(inout Light light, half3 normalWS, inout half3 bakedGI, half4 shadowMask)
-		private readonly string LWMixRealtimeWithGI = "MixRealtimeAndBakedGI({0}, {1}, {2}, half4(0,0,0,0));";
+		private readonly string IndirectDiffuseHeaderURP12 = "ASEIndirectDiffuse( {0}, {1} )";
+		private readonly string[] IndirectDiffuseBodyURP12 =
+		{
+			"half3 ASEIndirectDiffuse( PackedVaryings input, half3 normalWS, float3 positionWS = 0, half3 viewDirWS = 0 )\n",
+			"{\n",
+			"#if defined( DYNAMICLIGHTMAP_ON )\n",
+			"\treturn SAMPLE_GI( input.lightmapUVOrVertexSH.xy, input.dynamicLightmapUV.xy, 0, normalWS );\n",
+			"#elif defined( LIGHTMAP_ON )\n",
+			"\treturn SAMPLE_GI( input.lightmapUVOrVertexSH.xy, 0, normalWS );\n",
+			"#else\n",
+			"\treturn SampleSH( normalWS );\n",
+			"#endif\n",
+			"}\n"
+		};
+
+		private readonly string IndirectDiffuseHeaderURP15 = "ASEIndirectDiffuse( {0}, {1}, {2}, {3} )";
+		private readonly string[] IndirectDiffuseBodyURP15 =
+		{
+			"half3 ASEIndirectDiffuse( PackedVaryings input, half3 normalWS, float3 positionWS, half3 viewDirWS )\n",
+			"{\n",
+			"#if defined( DYNAMICLIGHTMAP_ON )\n",
+			"\treturn SAMPLE_GI( input.lightmapUVOrVertexSH.xy, input.dynamicLightmapUV.xy, 0, normalWS );\n",
+			"#elif defined( LIGHTMAP_ON )\n",
+			"\treturn SAMPLE_GI( input.lightmapUVOrVertexSH.xy, 0, normalWS );\n",
+			"#elif defined( PROBE_VOLUMES_L1 ) || defined( PROBE_VOLUMES_L2 )\n",
+			"\return SAMPLE_GI( SampleSH( normalWS ), positionWS, normalWS, viewDirWS, input.positionCS.xy );\n",
+			"#else\n",
+			"\treturn SampleSH( normalWS );\n",
+			"#endif\n",
+			"}\n"
+		};
+
+		private readonly string IndirectDiffuseHeaderURP17 = "ASEIndirectDiffuse( {0}, {1}, {2}, {3} )";
+		private readonly string[] IndirectDiffuseBodyURP17 =
+		{
+			"half3 ASEIndirectDiffuse( PackedVaryings input, half3 normalWS, float3 positionWS, half3 viewDirWS )\n",
+			"{\n",
+			"#if defined( DYNAMICLIGHTMAP_ON )\n",
+			"\treturn SAMPLE_GI( input.lightmapUVOrVertexSH.xy, input.dynamicLightmapUV.xy, 0, normalWS );\n",
+			"#elif defined( LIGHTMAP_ON )\n",
+			"\treturn SAMPLE_GI( input.lightmapUVOrVertexSH.xy, 0, normalWS );\n",
+			"#elif defined( PROBE_VOLUMES_L1 ) || defined( PROBE_VOLUMES_L2 )\n",
+			"\return SampleProbeVolumePixel( SampleSH( normalWS ), positionWS, normalWS, viewDirWS, input.positionCS.xy );\n",
+			"#else\n",
+			"\treturn SampleSH( normalWS );\n",
+			"#endif\n",
+			"}\n"
+		};
 
 		protected override void CommonInit( int uniqueId )
 		{
@@ -225,9 +271,9 @@ namespace AmplifyShaderEditor
 						{
 							string worldNormal = dataCollector.TemplateDataCollectorInstance.GetWorldNormal( PrecisionType.Float, false, MasterNodePortCategory.Vertex );
 							dataCollector.TemplateDataCollectorInstance.RequestNewInterpolator( WirePortDataType.FLOAT4, false, "lightmapUVOrVertexSH" );
-						
+
 							dataCollector.AddToVertexLocalVariables( UniqueId, "OUTPUT_LIGHTMAP_UV( " + texcoord1 + ", unity_LightmapST, " + vOutName + ".lightmapUVOrVertexSH.xy );", true );
-						
+
 							if ( ASEPackageManagerHelper.PackageSRPVersion >= ( int )ASESRPBaseline.ASE_SRP_15 )
 							{
 								string worldPos = dataCollector.TemplateDataCollectorInstance.GetWorldPos( false, MasterNodePortCategory.Vertex );
@@ -243,15 +289,15 @@ namespace AmplifyShaderEditor
 							{
 								dataCollector.AddToVertexLocalVariables( UniqueId, "OUTPUT_SH( " + worldNormal + ", " + vOutName + ".lightmapUVOrVertexSH.xyz );", true );
 							}
-						
+
 							dataCollector.AddToPragmas( UniqueId, "multi_compile _ DIRLIGHTMAP_COMBINED" );
 							dataCollector.AddToPragmas( UniqueId, "multi_compile _ LIGHTMAP_ON" );
 							dataCollector.AddToPragmas( UniqueId , "multi_compile _ _MIXED_LIGHTING_SUBTRACTIVE" );
-						
+
 							dataCollector.AddToPragmas( UniqueId , "multi_compile _ _MAIN_LIGHT_SHADOWS" );
 							dataCollector.AddToPragmas( UniqueId , "multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE" );
 							dataCollector.AddToPragmas( UniqueId , "multi_compile _ _SHADOWS_SOFT" );
-						
+
 						}
 
 						string fragWorldNormal = string.Empty;
@@ -268,17 +314,40 @@ namespace AmplifyShaderEditor
 						}
 
 						//SAMPLE_GI
-
-						//This function may not do full pixel and does not behave correctly with given normal thus is commented out
-						//dataCollector.AddLocalVariable( UniqueId, "float3 bakedGI" + OutputId + " = SAMPLE_GI( " + fInName + ".lightmapUVOrVertexSH.xy, " + fInName + ".lightmapUVOrVertexSH.xyz, " + fragWorldNormal + " );" );
-						dataCollector.AddFunction( LWIndirectDiffuseBody[ 0 ], LWIndirectDiffuseBody, false );
 						finalValue = "bakedGI" + OutputId;
-						string result = string.Format( LWIndirectDiffuseHeader, fInName + ".lightmapUVOrVertexSH.xy", fragWorldNormal );
+
+						string result;
+						if ( ASEPackageManagerHelper.CurrentSRPVersion >= ( int )ASESRPBaseline.ASE_SRP_15 )
+						{
+							string positionWS = dataCollector.TemplateDataCollectorInstance.GetWorldPos();
+							string viewDirWS = dataCollector.TemplateDataCollectorInstance.GetViewDir();
+
+							if ( ASEPackageManagerHelper.CurrentSRPVersion >= ( int )ASESRPBaseline.ASE_SRP_17 )
+							{
+								dataCollector.AddFunction( IndirectDiffuseBodyURP17[ 0 ], IndirectDiffuseBodyURP17, false );
+								result = string.Format( IndirectDiffuseHeaderURP17, fInName, fragWorldNormal, positionWS, viewDirWS );
+							}
+							else
+							{
+								dataCollector.AddFunction( IndirectDiffuseBodyURP15[ 0 ], IndirectDiffuseBodyURP15, false );
+								result = string.Format( IndirectDiffuseHeaderURP15, fInName, fragWorldNormal, positionWS, viewDirWS );
+							}
+						}
+						else if ( ASEPackageManagerHelper.CurrentSRPVersion >= ( int )ASESRPBaseline.ASE_SRP_12 )
+						{
+							dataCollector.AddFunction( IndirectDiffuseBodyURP12[ 0 ], IndirectDiffuseBodyURP12, false );
+							result = string.Format( IndirectDiffuseHeaderURP12, fInName, fragWorldNormal );
+						}
+						else // ASE_SRP_10
+						{
+							dataCollector.AddFunction( IndirectDiffuseBodyURP10[ 0 ], IndirectDiffuseBodyURP10, false );
+							result = string.Format( IndirectDiffuseHeaderURP10, fInName, fragWorldNormal );
+						}
+
 						dataCollector.AddLocalVariable( UniqueId, CurrentPrecisionType, WirePortDataType.FLOAT3, finalValue, result );
+
 						string mainLight = dataCollector.TemplateDataCollectorInstance.GetURPMainLight(UniqueId);
-						dataCollector.AddLocalVariable( UniqueId , string.Format( LWMixRealtimeWithGI , mainLight , fragWorldNormal , finalValue ) );
-
-
+						dataCollector.AddLocalVariable( UniqueId , string.Format( "MixRealtimeAndBakedGI( {0}, {1}, {2}, half4( 0, 0, 0, 0 ) );", mainLight, fragWorldNormal, finalValue ) );
 
 						m_outputPorts[ 0 ].SetLocalValue( finalValue, dataCollector.PortCategory );
 						return finalValue;
@@ -287,6 +356,7 @@ namespace AmplifyShaderEditor
 					{
 						string texcoord1 = string.Empty;
 						string texcoord2 = string.Empty;
+
 
 						if( dataCollector.TemplateDataCollectorInstance.HasInfo( TemplateInfoOnSematics.TEXTURE_COORDINATES1, false, MasterNodePortCategory.Vertex ) )
 							texcoord1 = dataCollector.TemplateDataCollectorInstance.GetInfo( TemplateInfoOnSematics.TEXTURE_COORDINATES1, false, MasterNodePortCategory.Vertex ).VarName;
@@ -328,7 +398,7 @@ namespace AmplifyShaderEditor
 						//SAMPLE_GI
 						if ( ASEPackageManagerHelper.CurrentSRPVersion >= ( int )ASESRPBaseline.ASE_SRP_17 )
 						{
-							string screenPos = GeneratorUtils.GenerateScreenPosition( ref dataCollector, UniqueId, CurrentPrecisionType );
+							string screenPos = GeneratorUtils.GenerateScreenPositionRaw( ref dataCollector, UniqueId, CurrentPrecisionType );
 							string positionSS = string.Format( "( uint2 )( {0}.xy / {0}.w * _ScreenSize.xy )", screenPos );
 
 							dataCollector.AddLocalVariable( UniqueId, "float3 bakedGI" + OutputId + " = SampleBakedGI( " + worldPos + ", " + fragWorldNormal + ", " + positionSS + ", " + fInName + ".ase_lightmapUVs.xy, " + fInName + ".ase_lightmapUVs.zw );" );
@@ -349,7 +419,7 @@ namespace AmplifyShaderEditor
 			string normal = string.Empty;
 			if( m_inputPorts[ 0 ].IsConnected )
 			{
-				dataCollector.AddToInput( UniqueId, SurfaceInputs.WORLD_NORMAL, CurrentPrecisionType );
+				dataCollector.AddToInput( UniqueId, SurfaceInputs.WORLD_NORMAL, UIUtils.CurrentWindow.CurrentGraph.CurrentPrecision );
 				dataCollector.AddToInput( UniqueId, SurfaceInputs.INTERNALDATA, addSemiColon: false );
 				dataCollector.ForceNormal = true;
 
@@ -367,7 +437,7 @@ namespace AmplifyShaderEditor
 			{
 				if( dataCollector.IsFragmentCategory )
 				{
-					dataCollector.AddToInput( UniqueId, SurfaceInputs.WORLD_NORMAL, CurrentPrecisionType );
+					dataCollector.AddToInput( UniqueId, SurfaceInputs.WORLD_NORMAL, UIUtils.CurrentWindow.CurrentGraph.CurrentPrecision );
 					if( dataCollector.DirtyNormal )
 					{
 						dataCollector.AddToInput( UniqueId, SurfaceInputs.INTERNALDATA, addSemiColon: false );
