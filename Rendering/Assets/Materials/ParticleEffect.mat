@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: GpuDriven
+  m_Name: ParticleEffect
   m_Shader: {fileID: 4800000, guid: 98d986e8a7507a54182c07067fd0c74a, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
