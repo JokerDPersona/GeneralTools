@@ -9,10 +9,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3c9060950875c5b4c95d9559751a6784, type: 3}
-  m_Name: Readme
+  m_Script: {fileID: 11500000, guid: dea69d41f90c6ea4fa55c27c1d60c145, type: 3}
+  m_Name: AddressableAssetGroupSortSettings
   m_EditorClassIdentifier: 
-  icon: {fileID: 0}
-  title: 
-  sections: []
-  loadedLayout: 0
+  sortOrder:
+  - 854f452b1ad56ab40baf93c992bdb1a6
+  - 3f85386df64c17648906ccae542f70e8
