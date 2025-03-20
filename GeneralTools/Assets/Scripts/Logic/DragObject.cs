@@ -2,7 +2,7 @@ using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class ClickController : MonoBehaviour
+public class DragObject : MonoBehaviour
 {
     private Camera mainCamera;
     private bool isDragging;
