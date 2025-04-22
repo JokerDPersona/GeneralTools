@@ -6,7 +6,7 @@
 #ifdef _ENABLE_GPUDRIVEN
         #include "GPUDrivenIndirect.hlsl"
 #else
-        #include "CPUDrivenIndirect.hlsl"
+#include "CPUDrivenIndirect.hlsl"
 #endif
 
 

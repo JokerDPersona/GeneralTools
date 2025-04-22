@@ -7,12 +7,12 @@ int _PackNodeDescCount;
 int _MaxImposterIdReadBackCount;
 
 [numthreads(64,1,1)]
-void ClearPackImposterData (uint3 id : SV_DispatchThreadID)
+void ClearPackImposterData(uint3 id : SV_DispatchThreadID)
 {
-    if(id.x > _PackNodeDescCount)
+    if (id.x > _PackNodeDescCount)
         return;
 
     _AllPackDynamicImposterId[id.x] = 0;
-    if(id.x < _MaxImposterIdReadBackCount)
+    if (id.x < _MaxImposterIdReadBackCount)
         _SelectPackImposterIds[id.x] = -1;
 }

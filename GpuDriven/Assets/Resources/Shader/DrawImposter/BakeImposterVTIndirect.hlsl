@@ -11,11 +11,11 @@ float4x4 _ImposterCamProjectionMatrixs[512];
 
 void BakeImposterSetUp()
 {
-    unity_ObjectToWorld = float4x4(1,0,0,0,
-        0,1,0,0,
-        0,0,1,0,
-        0,0,0,1);
-    
+    unity_ObjectToWorld = float4x4(1, 0, 0, 0,
+                                   0, 1, 0, 0,
+                                   0, 0, 1, 0,
+                                   0, 0, 0, 1);
+
     unity_WorldToObject = Inverse(unity_ObjectToWorld);
 
     float4x4 viewMat = _ImposterCamViewMatrixs[unity_InstanceID];;
@@ -24,11 +24,9 @@ void BakeImposterSetUp()
     float4x4 pMat = _ImposterCamProjectionMatrixs[unity_InstanceID];
     glstate_matrix_projection = pMat;
     unity_MatrixInvP = Inverse(glstate_matrix_projection);
-    unity_MatrixVP = mul(pMat,viewMat);
+    unity_MatrixVP = mul(pMat, viewMat);
     unity_MatrixInvVP = Inverse(unity_MatrixVP);
-    
 }
-
 
 
 #endif

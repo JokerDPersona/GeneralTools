@@ -9,29 +9,30 @@ int _MaxImposterIdReadBackCount;
 
 
 [numthreads(64,1,1)]
-void ComputeReadBackImposterId (uint3 id : SV_DispatchThreadID,uint3 groupThreadId : SV_GroupThreadID,uint3 groupId:SV_GroupID,int groupIndex:SV_GroupIndex)
+void ComputeReadBackImposterId(uint3 id : SV_DispatchThreadID, uint3 groupThreadId : SV_GroupThreadID,
+                               uint3 groupId:SV_GroupID, int groupIndex:SV_GroupIndex)
 {
-    if(groupId.x * 2 + 1>=_MaxImposterIdReadBackCount)
+    if (groupId.x * 2 + 1 >= _MaxImposterIdReadBackCount)
         return;
-    
-    if(groupIndex < 32)
+
+    if (groupIndex < 32)
     {
         const uint loc = groupIndex;
         const uint imposterDescIndex = groupId.x * 2;
         const uint packImposterIdIndex = _SelectPackImposterIds[imposterDescIndex];
-        if(packImposterIdIndex==-1)
+        if (packImposterIdIndex == -1)
             return;
-        
+
         const uint desc = _AllPackDynamicImposterId[packImposterIdIndex];
-    
-        if(((desc>>loc)&0x1)!=0)
+
+        if (((desc >> loc) & 0x1) != 0)
         {
             int index = 0;
-            InterlockedAdd(_AsyncReadBackImposterIds[_MaxImposterIdReadBackCount],1,index);
+            InterlockedAdd(_AsyncReadBackImposterIds[_MaxImposterIdReadBackCount], 1, index);
             const int nodeId = packImposterIdIndex * 32 + loc;
-            
+
             const int imposterPackId = GetImposterPackId(nodeId);
-            if(index<_MaxImposterIdReadBackCount)
+            if (index < _MaxImposterIdReadBackCount)
                 _AsyncReadBackImposterIds[index] = imposterPackId;
         }
     }
@@ -40,18 +41,18 @@ void ComputeReadBackImposterId (uint3 id : SV_DispatchThreadID,uint3 groupThread
         const uint loc = groupIndex - 32;
         const uint imposterDescIndex = groupId.x * 2 + 1;
         const uint packImposterIdIndex = _SelectPackImposterIds[imposterDescIndex];
-        if(packImposterIdIndex==-1)
+        if (packImposterIdIndex == -1)
             return;
         const uint desc = _AllPackDynamicImposterId[packImposterIdIndex];
-    
-        if(((desc>>loc)&0x1)!=0)
+
+        if (((desc >> loc) & 0x1) != 0)
         {
             int index = 0;
-            InterlockedAdd(_AsyncReadBackImposterIds[_MaxImposterIdReadBackCount],1,index);
+            InterlockedAdd(_AsyncReadBackImposterIds[_MaxImposterIdReadBackCount], 1, index);
             const int nodeId = packImposterIdIndex * 32 + loc;
-            
+
             const int imposterPackId = GetImposterPackId(nodeId);
-            if(index<_MaxImposterIdReadBackCount)
+            if (index < _MaxImposterIdReadBackCount)
                 _AsyncReadBackImposterIds[index] = imposterPackId;
         }
     }

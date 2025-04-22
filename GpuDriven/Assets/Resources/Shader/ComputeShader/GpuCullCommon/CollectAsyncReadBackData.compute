@@ -1,4 +1,3 @@
-
 #pragma kernel CollectAsyncReadBackData
 #include "../../CommonInclude/GPUDrivenCommon.hlsl"
 #pragma enable_d3d11_debug_symbols
@@ -10,21 +9,21 @@ int _DataCount;
 int _MaxGpuDrivenDrawCallCount;
 
 [numthreads(64,1,1)]
-void CollectAsyncReadBackData (uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GroupID,int groupIndex:SV_GroupIndex)
+void CollectAsyncReadBackData(uint3 id : SV_DispatchThreadID, uint3 groupId:SV_GroupID, int groupIndex:SV_GroupIndex)
 {
-    if(id.x>=_MeshTypeCount * _DataCount)
+    if (id.x >= _MeshTypeCount * _DataCount)
         return;
-    const uint loc = groupIndex < 32?groupIndex:(groupIndex - 32);
-    const uint fadeIndex = groupIndex < 32?groupId.x * 2:(groupId.x * 2 + 1);
+    const uint loc = groupIndex < 32 ? groupIndex : (groupIndex - 32);
+    const uint fadeIndex = groupIndex < 32 ? groupId.x * 2 : (groupId.x * 2 + 1);
     const uint desc = _AsyncReadBackPackedBuffer[fadeIndex];
-    
-    if(((desc>>loc)&0x1)!=0)
+
+    if (((desc >> loc) & 0x1) != 0)
     {
         const int meshTypeId = fadeIndex * 32 + loc;
-    
+
         int index = 0;
-        InterlockedAdd(_CollectReadBackPackedBuffer[_MaxGpuDrivenDrawCallCount],1,index);
-        if(index<_MaxGpuDrivenDrawCallCount)
+        InterlockedAdd(_CollectReadBackPackedBuffer[_MaxGpuDrivenDrawCallCount], 1, index);
+        if (index < _MaxGpuDrivenDrawCallCount)
             _CollectReadBackPackedBuffer[index] = meshTypeId;
     }
 }

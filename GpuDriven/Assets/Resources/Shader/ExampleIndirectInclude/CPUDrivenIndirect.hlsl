@@ -10,15 +10,15 @@
 
 
 CBUFFER_START(UnityInstanced)
-float4 _StaticGpuDrivenPosAndLod0MeshTypes[CPU_RENDER_BATCH_COUNT];
-float4 _StaticGpuDrivenQuters[CPU_RENDER_BATCH_COUNT];
-float4 _StaticGpuDrivenScaleAndCustomDatas[CPU_RENDER_BATCH_COUNT];
-float4 _StaticGpuDrivenCustomDatas0[CPU_RENDER_BATCH_COUNT];
+    float4 _StaticGpuDrivenPosAndLod0MeshTypes[CPU_RENDER_BATCH_COUNT];
+    float4 _StaticGpuDrivenQuters[CPU_RENDER_BATCH_COUNT];
+    float4 _StaticGpuDrivenScaleAndCustomDatas[CPU_RENDER_BATCH_COUNT];
+    float4 _StaticGpuDrivenCustomDatas0[CPU_RENDER_BATCH_COUNT];
 
-float4 _DynamicGpuDrivenPosAndLod0MeshTypes[CPU_RENDER_BATCH_COUNT];
-float4 _DynamicGpuDrivenQuters[CPU_RENDER_BATCH_COUNT];
-float4 _DynamicGpuDrivenScaleAndCustomDatas[CPU_RENDER_BATCH_COUNT];
-float4 _DynamicGpuDrivenCustomDatas0[CPU_RENDER_BATCH_COUNT];
+    float4 _DynamicGpuDrivenPosAndLod0MeshTypes[CPU_RENDER_BATCH_COUNT];
+    float4 _DynamicGpuDrivenQuters[CPU_RENDER_BATCH_COUNT];
+    float4 _DynamicGpuDrivenScaleAndCustomDatas[CPU_RENDER_BATCH_COUNT];
+    float4 _DynamicGpuDrivenCustomDatas0[CPU_RENDER_BATCH_COUNT];
 
 CBUFFER_END
 
@@ -45,7 +45,7 @@ void StaticGpuDrivenSetup()
 
 void DynamicGpuDrivenSetup()
 {
-    #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED	 
+    #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 
     float3 position = _DynamicGpuDrivenPosAndLod0MeshTypes[unity_InstanceID];
     float4 quter = _DynamicGpuDrivenQuters[unity_InstanceID];
@@ -57,7 +57,6 @@ void DynamicGpuDrivenSetup()
     unity_WorldToObject = Inverse(unity_ObjectToWorld);
     
     #endif
-    
 }
 
 

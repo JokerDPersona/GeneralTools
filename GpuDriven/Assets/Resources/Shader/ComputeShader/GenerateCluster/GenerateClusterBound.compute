@@ -4,16 +4,16 @@
 StructuredBuffer<GpuBounds> _AllLodInstanceWorldBounds;
 RWStructuredBuffer<ClusterData> _AllClusterData;
 
-float4 _WorldRect;//xy:左下角坐标 z:宽度 w:高度
+float4 _WorldRect; //xy:左下角坐标 z:宽度 w:高度
 uint _NumObject;
 
 
 //生成Cluster的包围盒,以实例物体的lod0对应的Bounds来生成
 //因为部分真机或模拟器并不支持InterlockedMin、InterlockedMax这种写法，所以ClusterBounds这里使用暴力计算
 [numthreads(64,1,1)]
-void GenerateClusterBound(uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GroupID,uint3 groupThreadId:SV_GroupThreadID,int groupIndex:SV_GroupIndex)
+void GenerateClusterBound(uint3 id : SV_DispatchThreadID, uint3 groupId:SV_GroupID,
+                          uint3 groupThreadId:SV_GroupThreadID, int groupIndex:SV_GroupIndex)
 {
-
     const int clusterId = id.x;
 
     float posXMin = FLOAT_MAX;
@@ -23,28 +23,26 @@ void GenerateClusterBound(uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GroupI
     float posXMax = FLOAT_MIN;
     float posYMax = FLOAT_MIN;
     float posZMax = FLOAT_MIN;
-    
 
-    for(int i = 0;i<64;++i)
+
+    for (int i = 0; i < 64; ++i)
     {
         const int instanceId = clusterId * 64 + i;
-        if(instanceId>=_NumObject)
+        if (instanceId >= _NumObject)
             continue;
         const GpuBounds instanceBounds = _AllLodInstanceWorldBounds[instanceId * 4];
-        posXMin = min(instanceBounds.min.x,posXMin);
-        posYMin = min(instanceBounds.min.y,posYMin);
-        posZMin = min(instanceBounds.min.z,posZMin);
-        posXMax = max(instanceBounds.max.x,posXMax);
-        posYMax = max(instanceBounds.max.y,posYMax);
-        posZMax = max(instanceBounds.max.z,posZMax);
+        posXMin = min(instanceBounds.min.x, posXMin);
+        posYMin = min(instanceBounds.min.y, posYMin);
+        posZMin = min(instanceBounds.min.z, posZMin);
+        posXMax = max(instanceBounds.max.x, posXMax);
+        posYMax = max(instanceBounds.max.y, posYMax);
+        posZMax = max(instanceBounds.max.z, posZMax);
     }
-    
+
     GpuBounds clusterBounds = (GpuBounds)0;
-    clusterBounds.min = float3(posXMin,posYMin,posZMin);
-    clusterBounds.max = float3(posXMax,posYMax,posZMax);
+    clusterBounds.min = float3(posXMin, posYMin, posZMin);
+    clusterBounds.max = float3(posXMax, posYMax, posZMax);
     ClusterData clusterData = (ClusterData)0;
     clusterData.bounds = clusterBounds;
     _AllClusterData[clusterId] = clusterData;
-
-
 }

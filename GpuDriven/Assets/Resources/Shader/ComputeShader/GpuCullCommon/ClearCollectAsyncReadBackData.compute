@@ -6,9 +6,9 @@ RWStructuredBuffer<int> _CollectReadBackPackedBuffer;
 int _MaxGpuDrivenDrawCallCount;
 
 [numthreads(64,1,1)]
-void ClearCollectAsyncReadBackData (uint3 id : SV_DispatchThreadID)
+void ClearCollectAsyncReadBackData(uint3 id : SV_DispatchThreadID)
 {
-    if(id.x>_MaxGpuDrivenDrawCallCount)
-       return;
+    if (id.x > _MaxGpuDrivenDrawCallCount)
+        return;
     _CollectReadBackPackedBuffer[id.x] = 0;
 }

@@ -1,7 +1,7 @@
 #pragma kernel ExChangeInstanceDataBySortIndex
 #include "../../CommonInclude/GPUDrivenCommon.hlsl"
 
-StructuredBuffer<uint> _SortIndexs;//排序好了的下标
+StructuredBuffer<uint> _SortIndexs; //排序好了的下标
 StructuredBuffer<InstanceData> _AllCullInstanceData;
 RWStructuredBuffer<InstanceData> _AllTempCullInstanceData;
 
@@ -9,6 +9,6 @@ RWStructuredBuffer<InstanceData> _AllTempCullInstanceData;
 void ExChangeInstanceDataBySortIndex(uint3 id : SV_DispatchThreadID)
 {
     const uint sortIndex = _SortIndexs[id.x];
-    const InstanceData tempCullData =  _AllCullInstanceData[sortIndex];
+    const InstanceData tempCullData = _AllCullInstanceData[sortIndex];
     _AllTempCullInstanceData[id.x] = tempCullData;
 }

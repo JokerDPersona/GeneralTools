@@ -1,39 +1,39 @@
-
 #pragma kernel ComputeIndexStart
 #include "../../CommonInclude/GPUDrivenCommon.hlsl"
 #pragma enable_d3d11_debug_symbols
-StructuredBuffer<uint> _CullInstanceMeshTypeCount;//序号为Mesh的id、值为对应Mesh类型的数量，这个数据需要回读
-StructuredBuffer<uint> _TotalCullCount;//总计数
+StructuredBuffer<uint> _CullInstanceMeshTypeCount; //序号为Mesh的id、值为对应Mesh类型的数量，这个数据需要回读
+StructuredBuffer<uint> _TotalCullCount; //总计数
 RWStructuredBuffer<uint> _CullInstanceTypeIndexStartCount;
 RWStructuredBuffer<uint> _CullInstanceTypeIndexStart;
 RWStructuredBuffer<uint> _CollectCullIndirectArgs;
-RWStructuredBuffer<uint> _DrawCallIndirectArgs;//所有Mesh的间接绘制参数,长度为5*Mesh最大id*4
+RWStructuredBuffer<uint> _DrawCallIndirectArgs; //所有Mesh的间接绘制参数,长度为5*Mesh最大id*4
 
 int _MeshTypeCount;
 int _DataCount;
 
 [numthreads(64,1,1)]
-void ComputeIndexStart (uint3 id : SV_DispatchThreadID)
+void ComputeIndexStart(uint3 id : SV_DispatchThreadID)
 {
-    if(id.x>=_MeshTypeCount * _DataCount)
+    if (id.x >= _MeshTypeCount * _DataCount)
         return;
-    
+
     const int subTypeCount = _CullInstanceMeshTypeCount[id.x];
     int curStartIndex = 0;
-    InterlockedAdd(_CullInstanceTypeIndexStartCount[0],subTypeCount,curStartIndex);
+    InterlockedAdd(_CullInstanceTypeIndexStartCount[0], subTypeCount, curStartIndex);
     _CullInstanceTypeIndexStart[id.x] = curStartIndex;
-    
+
     const int indirectArgInstanceCountIndex = id.x * 5 + 1;
     _DrawCallIndirectArgs[indirectArgInstanceCountIndex] = subTypeCount;
-    
-    if(id.x ==0)
+
+    if (id.x == 0)
     {
-        if(_TotalCullCount[0] == 0)
+        if (_TotalCullCount[0] == 0)
         {
             _CollectCullIndirectArgs[0] = 1;
-        }else
+        }
+        else
         {
-            _CollectCullIndirectArgs[0] = ((_TotalCullCount[0] - 1)/64) + 1;
+            _CollectCullIndirectArgs[0] = ((_TotalCullCount[0] - 1) / 64) + 1;
         }
     }
 }

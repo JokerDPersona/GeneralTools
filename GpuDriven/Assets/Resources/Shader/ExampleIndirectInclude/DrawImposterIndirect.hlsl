@@ -3,10 +3,10 @@
 #include "../CommonInclude/GPUDrivenCommon.hlsl"
 #include "../CommonInclude/DynamicImposterCommon.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-int _ImposterMaterialTypeIndex;//总Mesh类型x渲染视口数量+面片材质id
-int _AxisFrames;//轴向方位数量
+int _ImposterMaterialTypeIndex; //总Mesh类型x渲染视口数量+面片材质id
+int _AxisFrames; //轴向方位数量
 
-uniform StructuredBuffer<InstanceData> _StaticGpuDrivenIndirectAllInstanceDatas;//所有Instance的M矩阵以及自定义的数据
+uniform StructuredBuffer<InstanceData> _StaticGpuDrivenIndirectAllInstanceDatas; //所有Instance的M矩阵以及自定义的数据
 uniform StructuredBuffer<uint> _StaticGpuDrivenIndirectInstanceTypeIndexStart;
 uniform StructuredBuffer<uint> _StaticGpuDrivenIndirectCullInstanceIds;
 uniform StructuredBuffer<MeshData> _StaticGpuDrivenAllGpuMeshBuffer;
@@ -16,7 +16,7 @@ float4 _ImposterMeshFitSize;
 float4 _ImposterMeshScaleAndOffset;
 int _DynamicImposterId;
 int _MeshType;
- 
+
 void DrawImposterSetUp()
 {
     #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
@@ -47,7 +47,6 @@ void DrawImposterSetUp()
     
     #endif
 }
-
 
 
 #endif

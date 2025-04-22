@@ -7,59 +7,58 @@ uint _NumObject;
 RWStructuredBuffer<int> _CullAdditionalShadowClusterIds;
 #endif
 RWStructuredBuffer<int> _CullAdditionalShadowSliceIndexs;
-StructuredBuffer<InstanceData> _AllCullInstanceData;//所有的单例数据
+StructuredBuffer<InstanceData> _AllCullInstanceData; //所有的单例数据
 StructuredBuffer<GpuBounds> _AllLodInstanceWorldBounds;
 StructuredBuffer<MeshData> _AllGpuMeshBuffer;
 
-RWStructuredBuffer<uint> _CullInstanceMeshTypeCount;//本身+阴影 级联下标*Mesh总数+该类型
-RWStructuredBuffer<uint> _TotalCullCount;//阴影 索引为级联下标
+RWStructuredBuffer<uint> _CullInstanceMeshTypeCount; //本身+阴影 级联下标*Mesh总数+该类型
+RWStructuredBuffer<uint> _TotalCullCount; //阴影 索引为级联下标
 
-RWStructuredBuffer<uint> _CullInstanceTempData;//剔除后的id，未经过排序
+RWStructuredBuffer<uint> _CullInstanceTempData; //剔除后的id，未经过排序
 
-RWStructuredBuffer<uint> _LodFadeIds;//lod过渡回读id 5*TotalMeshCount
+RWStructuredBuffer<uint> _LodFadeIds; //lod过渡回读id 5*TotalMeshCount
 int _MeshTypeCount;
 
-int _AdditionShadowSliceCount;//当前多光源视口切片数量
-float4 _AdditionShadowSliceLightParam[100];//切片对应多光源的数据，xyz:位置 w:半径
+int _AdditionShadowSliceCount; //当前多光源视口切片数量
+float4 _AdditionShadowSliceLightParam[100]; //切片对应多光源的数据，xyz:位置 w:半径
 float4 _AdditionalShadowSlicePlaneDatas[1000];
 float _AdditionalShadowSlicePlaneCount[100];
 
-float3 _WorldCenterOffset;//大世界中心位置偏移
+float3 _WorldCenterOffset; //大世界中心位置偏移
 float _MoveDisOneFrame;
 float3 _MainCameraPos;
 
 
-
 [numthreads(64,1,1)]
-void CullAdditionalShadowInstanceAfterCluster (uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GroupID,int groupIndex:SV_GroupIndex)
+void CullAdditionalShadowInstanceAfterCluster(uint3 id : SV_DispatchThreadID, uint3 groupId:SV_GroupID,
+                                              int groupIndex:SV_GroupIndex)
 {
-    
     #if _ENABLE_CLUSTER
     const int clusterId = _CullAdditionalShadowClusterIds[groupId.x];
     const int instanceId = clusterId * 64 + groupIndex;
     #else
     const int instanceId = id.x;
     #endif
-    
-    if(instanceId>=_NumObject)
+
+    if (instanceId >= _NumObject)
         return;
 
     const InstanceData data = _AllCullInstanceData[instanceId];
     float3 scale;
     uint customInstanceId;
-    GetScaleAndCustomInstanceId(data.scaleXZ,data.scaleYAndCustomInstanceId,scale,customInstanceId);
-    
+    GetScaleAndCustomInstanceId(data.scaleXZ, data.scaleYAndCustomInstanceId, scale, customInstanceId);
+
     const MeshData lod0MeshData = _AllGpuMeshBuffer[data.lod0MeshId];
     const float3 center = data.pos + lod0MeshData.meshCenter * scale;
-    const float dis = distance(center + _WorldCenterOffset,_MainCameraPos);
-    const float maxScale = max(scale.x,max(scale.y,scale.z));
+    const float dis = distance(center + _WorldCenterOffset, _MainCameraPos);
+    const float maxScale = max(scale.x, max(scale.y, scale.z));
     const float4 realLodDistance = lod0MeshData.lodDistacne * maxScale;
-    const int lodLevel = GetLodLevel(realLodDistance,dis);
-    const int meshLodType = GetLodMeshId(lod0MeshData.lodMeshIds,lodLevel);
-    if(meshLodType==-1)//说明远处的lod未配置，所以直接剔除掉
+    const int lodLevel = GetLodLevel(realLodDistance, dis);
+    const int meshLodType = GetLodMeshId(lod0MeshData.lodMeshIds, lodLevel);
+    if (meshLodType == -1) //说明远处的lod未配置，所以直接剔除掉
         return;
     const MeshData curlodMeshData = _AllGpuMeshBuffer[meshLodType];
-    if(curlodMeshData.enableShadowCaster == 0)//说明业务逻辑不允许这个Mesh进行阴影投射
+    if (curlodMeshData.enableShadowCaster == 0) //说明业务逻辑不允许这个Mesh进行阴影投射
         return;
 
     const GpuBounds instanceBounds = _AllLodInstanceWorldBounds[instanceId * 4 + lodLevel];
@@ -68,40 +67,38 @@ void CullAdditionalShadowInstanceAfterCluster (uint3 id : SV_DispatchThreadID,ui
     float4 shadowLightParam = _AdditionShadowSliceLightParam[sliceIndex];
     const int slicePlaneCount = round(_AdditionalShadowSlicePlaneCount[sliceIndex]);
 
-    const bool visible = CheckBoundsAndSphereIntersect(instanceBounds,shadowLightParam.xyz,shadowLightParam.w)
-    &&AdditionalShadowInside(_AdditionalShadowSlicePlaneDatas,instanceBounds,sliceIndex,slicePlaneCount);
-    
-    if(visible)
+    const bool visible = CheckBoundsAndSphereIntersect(instanceBounds, shadowLightParam.xyz, shadowLightParam.w)
+        && AdditionalShadowInside(_AdditionalShadowSlicePlaneDatas, instanceBounds, sliceIndex, slicePlaneCount);
+
+    if (visible)
     {
         const int dataIndex = ADDITIONAL_SHADOW_DATA_INDEX + sliceIndex;
         const int additionalShadowMeshTypeOffset = _MeshTypeCount * dataIndex;
         const int additionalShadowMeshType = meshLodType + additionalShadowMeshTypeOffset;
         const int curMeshTypeCount = _CullInstanceMeshTypeCount[additionalShadowMeshType];
-        if(curMeshTypeCount < MESH_TYPE_RENDER_COUNT)
+        if (curMeshTypeCount < MESH_TYPE_RENDER_COUNT)
         {
-            InterlockedAdd(_CullInstanceMeshTypeCount[additionalShadowMeshType],1);
+            InterlockedAdd(_CullInstanceMeshTypeCount[additionalShadowMeshType], 1);
             int curIndex = 0;
-            InterlockedAdd(_TotalCullCount[0],1,curIndex);
-            
-            _CullInstanceTempData[curIndex] = PackInstanceTempData(instanceId,lodLevel,dataIndex); 
+            InterlockedAdd(_TotalCullCount[0], 1, curIndex);
 
-            
+            _CullInstanceTempData[curIndex] = PackInstanceTempData(instanceId, lodLevel, dataIndex);
+
+
             //通过裁剪后检测并记录lod过渡id                                                 
-            const int lodFadeId = GetLodFadeId(lod0MeshData.lodMeshIds,lodLevel,realLodDistance,dis,_MoveDisOneFrame);
-            if(lodFadeId!=-1)
+            const int lodFadeId = GetLodFadeId(lod0MeshData.lodMeshIds, lodLevel, realLodDistance, dis,
+                                               _MoveDisOneFrame);
+            if (lodFadeId != -1)
             {
                 const MeshData fadelodMeshData = _AllGpuMeshBuffer[lodFadeId];
-                if(fadelodMeshData.enableShadowCaster)
+                if (fadelodMeshData.enableShadowCaster)
                 {
                     const int lodFadeAdditionalShadowMeshType = lodFadeId + additionalShadowMeshTypeOffset;
-                    const int fadeIndex = lodFadeAdditionalShadowMeshType/32;
-                    const int moveIndex = lodFadeAdditionalShadowMeshType%32;
-                    InterlockedOr(_LodFadeIds[fadeIndex],1 << moveIndex);
+                    const int fadeIndex = lodFadeAdditionalShadowMeshType / 32;
+                    const int moveIndex = lodFadeAdditionalShadowMeshType % 32;
+                    InterlockedOr(_LodFadeIds[fadeIndex], 1 << moveIndex);
                 }
             }
         }
-        
     }
-    
-    
 }

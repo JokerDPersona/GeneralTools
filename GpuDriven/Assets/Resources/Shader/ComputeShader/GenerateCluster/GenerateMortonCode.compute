@@ -7,7 +7,7 @@
 StructuredBuffer<InstanceData> _AllCullInstanceData;
 RWStructuredBuffer<uint> _MortonCodes;
 uint _NumObject;
-float4 _MortonCodeParams;//x:物体X缩放倍率 y:物体Z缩放倍率 z:大世界中心坐标x起点 w:大世界中心坐标z起点
+float4 _MortonCodeParams; //x:物体X缩放倍率 y:物体Z缩放倍率 z:大世界中心坐标x起点 w:大世界中心坐标z起点
 
 uint LeftShift3_2(uint v)
 {
@@ -31,13 +31,14 @@ uint EncodeMorton3D_2(float x, float y, float z)
 [numthreads(64,1,1)]
 void GenerateMortonCode(uint3 id : SV_DispatchThreadID)
 {
-    if(id.x>=_NumObject)
+    if (id.x >= _NumObject)
     {
         _MortonCodes[id.x] = INT_MAX;
         return;
     }
     const InstanceData data = _AllCullInstanceData[id.x];
-    float3 center = data.pos;//(data.bounds.minPosition + data.bounds.maxPosition)/2.0f;
-    _MortonCodes[id.x] = EncodeMorton3D_2((center.x - _MortonCodeParams.z)/_MortonCodeParams.x,
-        center.y - WORLD_BUTTOM_HEIGHT,(center.z - _MortonCodeParams.y)/_MortonCodeParams.w);
+    float3 center = data.pos; //(data.bounds.minPosition + data.bounds.maxPosition)/2.0f;
+    _MortonCodes[id.x] = EncodeMorton3D_2((center.x - _MortonCodeParams.z) / _MortonCodeParams.x,
+                                          center.y - WORLD_BUTTOM_HEIGHT,
+                                          (center.z - _MortonCodeParams.y) / _MortonCodeParams.w);
 }
