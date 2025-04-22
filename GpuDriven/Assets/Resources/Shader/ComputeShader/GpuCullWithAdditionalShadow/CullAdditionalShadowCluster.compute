@@ -1,0 +1,48 @@
+#pragma kernel CullAdditionalShadowCluster
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+
+StructuredBuffer<ClusterData> _AllClusterData;
+RWStructuredBuffer<uint> _ClusterIndirectArgs;//本身+阴影+多光源阴影
+RWStructuredBuffer<int> _CullAdditionalShadowClusterIds;
+RWStructuredBuffer<int> _CullAdditionalShadowSliceIndexs;
+
+int _AdditionShadowSliceCount;//当前多光源视口切片数量
+float4 _AdditionShadowSliceLightParam[1000];//切片对应多光源的数据，xyz:位置 w:半径
+
+float _MaxAdditionalLightShadowDis;
+float3 _MainCameraPos;
+
+uint _NumObject;
+float3 _WorldCenterOffset;//大世界中心位置偏移
+
+[numthreads(64,1,1)]
+void CullAdditionalShadowCluster (uint3 id : SV_DispatchThreadID)
+{
+    const int clusterCount = ((_NumObject - 1)/64) + 1;
+    if(id.x>=clusterCount)
+        return;
+
+    const ClusterData data = _AllClusterData[id.x];
+    GpuBounds clusterBounds = data.bounds;
+    clusterBounds.min+=_WorldCenterOffset;
+    clusterBounds.max+=_WorldCenterOffset;
+    
+    if(_AdditionShadowSliceCount>0)
+    {
+        for(int i = 0;i<_AdditionShadowSliceCount;++i)
+        {
+            float4 shadowSliceLightParam = _AdditionShadowSliceLightParam[i];
+            if(length(_MainCameraPos - shadowSliceLightParam.xyz) - shadowSliceLightParam.w>_MaxAdditionalLightShadowDis)
+                continue;//光源太远直接剔除掉
+            
+            if(CheckBoundsAndSphereIntersect(clusterBounds,shadowSliceLightParam.xyz,shadowSliceLightParam.w))
+            {
+                int curIndex = 0;
+                InterlockedAdd(_ClusterIndirectArgs[6],1,curIndex);
+                _CullAdditionalShadowClusterIds[curIndex] = id.x;
+                _CullAdditionalShadowSliceIndexs[curIndex] = i;
+            }
+        }
+    }  
+    
+}

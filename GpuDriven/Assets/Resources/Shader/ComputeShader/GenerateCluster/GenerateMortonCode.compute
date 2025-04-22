@@ -1,0 +1,43 @@
+#pragma kernel GenerateMortonCode
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+
+//如果是UintMax排序时会数值溢出导致错误
+#define INT_MAX 2147483647//4294967295
+
+StructuredBuffer<InstanceData> _AllCullInstanceData;
+RWStructuredBuffer<uint> _MortonCodes;
+uint _NumObject;
+float4 _MortonCodeParams;//x:物体X缩放倍率 y:物体Z缩放倍率 z:大世界中心坐标x起点 w:大世界中心坐标z起点
+
+uint LeftShift3_2(uint v)
+{
+    v = (v * 0x00010001u) & 0xFF0000FFu;
+    v = (v * 0x00000101u) & 0x0F00F00Fu;
+    v = (v * 0x00000011u) & 0xC30C30C3u;
+    v = (v * 0x00000005u) & 0x49249249u;
+    return v;
+}
+
+uint EncodeMorton3D_2(float x, float y, float z)
+{
+    x = clamp(x, 0, 1023);
+    y = clamp(y, 0, 1023);
+    z = clamp(z, 0, 1023);
+    return (LeftShift3_2((uint)z) << 2) | (LeftShift3_2((uint)y << 1) | LeftShift3_2((uint)x));
+}
+
+
+//生成莫顿码
+[numthreads(64,1,1)]
+void GenerateMortonCode(uint3 id : SV_DispatchThreadID)
+{
+    if(id.x>=_NumObject)
+    {
+        _MortonCodes[id.x] = INT_MAX;
+        return;
+    }
+    const InstanceData data = _AllCullInstanceData[id.x];
+    float3 center = data.pos;//(data.bounds.minPosition + data.bounds.maxPosition)/2.0f;
+    _MortonCodes[id.x] = EncodeMorton3D_2((center.x - _MortonCodeParams.z)/_MortonCodeParams.x,
+        center.y - WORLD_BUTTOM_HEIGHT,(center.z - _MortonCodeParams.y)/_MortonCodeParams.w);
+}

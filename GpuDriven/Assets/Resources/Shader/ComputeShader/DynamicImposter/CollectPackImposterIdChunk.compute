@@ -1,0 +1,23 @@
+#pragma kernel CollectPackImposterIdChunk
+
+RWStructuredBuffer<uint> _AllPackDynamicImposterId;
+RWStructuredBuffer<uint> _SelectPackDynamicImposterIdCounter;
+RWStructuredBuffer<int> _SelectPackImposterIds;
+
+int _PackNodeDescCount;
+
+[numthreads(64,1,1)]
+void CollectPackImposterIdChunk (uint3 id : SV_DispatchThreadID)
+{
+    if(id.x>=_PackNodeDescCount)
+    {
+        return;
+    }
+    const uint packDesc = _AllPackDynamicImposterId[id.x];
+    if(packDesc > 0)
+    {
+        int index;
+        InterlockedAdd(_SelectPackDynamicImposterIdCounter[0],1,index);
+        _SelectPackImposterIds[index] = id.x;
+    }
+}

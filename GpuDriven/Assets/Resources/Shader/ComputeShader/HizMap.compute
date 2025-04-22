@@ -1,0 +1,152 @@
+#pragma kernel GenerateHiz
+#pragma kernel DownScaleSample
+
+#pragma multi_compile_local __ _REVERSE_Z
+
+
+//一次Dispatch算出4或5层mipmap
+RWTexture2D<float4> _TexMip0;//128x64|16x8
+RWTexture2D<float4> _TexMip1;//64x32|8x4
+RWTexture2D<float4> _TexMip2;//32x16|4x2
+RWTexture2D<float4> _TexMip3;//16x8|2x1
+
+
+
+int GetArrayIndex(int groupMipSizeX,uint3 _GroupThreadID)
+{
+    return _GroupThreadID.y * groupMipSizeX + _GroupThreadID.x;
+}
+
+
+float GetMaxDepth(float d1,float d2,float d3,float d4)
+{
+    #if  _REVERSE_Z
+    return min(min(d1,d2),min(d3,d4));
+    #else
+    return  max(max(d1,d2),max(d3,d4));
+    #endif
+}
+
+//最大线程组数量32x16
+groupshared shared float groupMip16x8Data[16*8];
+groupshared shared float groupMip8x4Data[8*4];
+groupshared shared float groupMip4x2Data[4*2];
+
+[numthreads(16,8,1)]
+void GenerateHiz(uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GROUPID,uint groupIndex : SV_GroupIndex,uint3 groupThreadID:SV_GroupThreadID)
+{
+    uint2 coord = id.xy;
+    groupMip16x8Data[groupIndex] = _TexMip0[coord].r;
+    GroupMemoryBarrierWithGroupSync();
+
+    if(groupThreadID.x<8&&groupThreadID.y<4)
+    {//这里只访问组内的一半线程
+        //访问四组上面计算的Mip0数据，然后写入到下面
+        int groupIndex0 = GetArrayIndex(16,groupThreadID * 2);//左下角
+        int groupIndex1 = GetArrayIndex(16,groupThreadID * 2 + uint3(1,0,0));//右下角
+        int groupIndex2 = GetArrayIndex(16,groupThreadID * 2 + uint3(0,1,0));//左上角
+        int groupIndex3 = GetArrayIndex(16,groupThreadID * 2 + uint3(1,1,0));//右上角
+
+        const float mipDepth = GetMaxDepth(groupMip16x8Data[groupIndex0],groupMip16x8Data[groupIndex1],groupMip16x8Data[groupIndex2],groupMip16x8Data[groupIndex3]);
+        int curMipGroupIndex = GetArrayIndex(8,groupThreadID);
+        groupMip8x4Data[curMipGroupIndex] = mipDepth;
+        //
+        uint2 uv = uint2(8 * groupId.x + groupThreadID.x, 4 * groupId.y + groupThreadID.y);
+        _TexMip1[uv] = float4(mipDepth,0.0f,0.0f,0.0f);//float4(1.0,0.0f,0.0f,0.0f);
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    
+    if(groupThreadID.x<4&&groupThreadID.y<2)
+    {//这里只访问组内的一半线程
+        //访问四组上面计算的Mip0数据，然后写入到下面
+        int groupIndex0 = GetArrayIndex(8,groupThreadID * 2);//左下角
+        int groupIndex1 = GetArrayIndex(8,groupThreadID * 2 + uint3(1,0,0));//右下角
+        int groupIndex2 = GetArrayIndex(8,groupThreadID * 2 + uint3(0,1,0));//左上角
+        int groupIndex3 = GetArrayIndex(8,groupThreadID * 2 + uint3(1,1,0));//右上角
+
+        const float mipDepth = GetMaxDepth(groupMip8x4Data[groupIndex0],groupMip8x4Data[groupIndex1],groupMip8x4Data[groupIndex2],groupMip8x4Data[groupIndex3]);
+        int curMipGroupIndex = GetArrayIndex(4,groupThreadID);
+        groupMip4x2Data[curMipGroupIndex] = mipDepth;
+        //
+        uint2 uv = uint2(4 * groupId.x + groupThreadID.x, 2 * groupId.y + groupThreadID.y);
+        _TexMip2[uv] = float4(mipDepth,0.0f,0.0f,0.0f);//float4(1.0,0.0f,0.0f,0.0f);
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    if(groupThreadID.x<2&&groupThreadID.y<1)
+    {
+        int groupIndex0 = GetArrayIndex(4,groupThreadID * 2);//左下角
+        int groupIndex1 = GetArrayIndex(4,groupThreadID * 2 + uint3(1,0,0));//右下角
+        int groupIndex2 = GetArrayIndex(4,groupThreadID * 2 + uint3(0,1,0));//左上角
+        int groupIndex3 = GetArrayIndex(4,groupThreadID * 2 + uint3(1,1,0));//右上角
+
+        const float mipDepth = GetMaxDepth(groupMip4x2Data[groupIndex0],groupMip4x2Data[groupIndex1],groupMip4x2Data[groupIndex2],groupMip4x2Data[groupIndex3]);
+        
+        uint2 uv = uint2(2 * groupId.x + groupThreadID.x, 1 * groupId.y + groupThreadID.y);
+        _TexMip3[uv] = float4(mipDepth,0.0f,0.0f,0.0f);
+    }
+    
+    
+}
+
+Texture2D<float4> _SourceTex;
+
+
+groupshared shared float groupMip8x8Data[8*8];
+groupshared shared float groupMip4x4Data[4*4];
+uniform float4 _HizMapSize;
+
+
+[numthreads(8,8,1)]
+void DownScaleSample(uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GROUPID,uint groupIndex : SV_GroupIndex,uint3 groupThreadID:SV_GroupThreadID)
+{
+    int sourceX,sourceY;
+    _SourceTex.GetDimensions(sourceX,sourceY);
+    
+    float2 uv = (id.xy + 0.5) / _HizMapSize.xy;
+
+    const float2 texCoord = float2(uv.x * sourceX, uv.y * sourceY);
+    const float2 floorCoord = floor(texCoord);
+    const float2 fracCoord = frac(texCoord);
+
+    float4 color = 0;
+
+    //使用手动双线性插值进行降采样
+    for (int i = 0; i < 2; i++)
+    {
+        for (int j = 0; j < 2; j++)
+        {
+            const float2 sampleCoord = floorCoord + float2(i, j);
+            const int2 sampleUV = clamp( (int2)(sampleCoord + fracCoord) ,int2(0,0),int2(sourceX-1,sourceY-1));
+            color += _SourceTex[sampleUV];
+        }
+    }
+
+    color /= 4;
+    groupMip8x8Data[groupIndex] = color.r;
+    _TexMip0[id.xy] = color;
+    GroupMemoryBarrierWithGroupSync();
+
+    if(groupThreadID.x<4&&groupThreadID.y<4)
+    {//这里只访问组内的一半线程
+        //访问四组上面计算的Mip0数据，然后写入到下面
+        int groupIndex0 = GetArrayIndex(8,groupThreadID * 2);//左下角
+        int groupIndex1 = GetArrayIndex(8,groupThreadID * 2 + uint3(1,0,0));//右下角
+        int groupIndex2 = GetArrayIndex(8,groupThreadID * 2 + uint3(0,1,0));//左上角
+        int groupIndex3 = GetArrayIndex(8,groupThreadID * 2 + uint3(1,1,0));//右上角
+
+        const float mipDepth = GetMaxDepth(groupMip8x8Data[groupIndex0],groupMip8x8Data[groupIndex1],groupMip8x8Data[groupIndex2],groupMip8x8Data[groupIndex3]);
+        int curMipGroupIndex = GetArrayIndex(4,groupThreadID);
+        groupMip4x4Data[curMipGroupIndex] = mipDepth;
+        //
+        uint2 uv = uint2(4 * groupId.x + groupThreadID.x, 4 * groupId.y + groupThreadID.y);
+        _TexMip1[uv] = float4(mipDepth,0.0f,0.0f,0.0f);
+    }
+    
+}
+
+
+
+
+

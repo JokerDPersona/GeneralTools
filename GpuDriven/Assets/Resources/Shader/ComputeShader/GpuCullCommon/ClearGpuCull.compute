@@ -1,0 +1,49 @@
+
+#pragma kernel ClearGpuCull
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+#pragma enable_d3d11_debug_symbols
+
+RWStructuredBuffer<uint> _AsyncReadBackPackedBuffer;//本身+阴影
+RWStructuredBuffer<uint> _CullInstanceMeshTypeCount;//本身+阴影 序号为Mesh的id、值为对应Mesh类型的数量，这个数据需要回读
+RWStructuredBuffer<uint> _CullInstanceTempCount;//本身+阴影 剔除后的数据计数器
+RWStructuredBuffer<uint> _DrawCallIndirectArgs;//本身+阴影 所有Mesh的间接绘制参数,长度为5*Mesh最大id*4
+RWStructuredBuffer<uint> _TotalCullCount;//本身+阴影 总计数
+RWStructuredBuffer<uint> _CullInstanceTypeIndexStartCount;//本身+阴影
+RWStructuredBuffer<uint> _ClusterIndirectArgs;//本身+阴影
+RWStructuredBuffer<uint> _LodFadeIds;//lod过渡回读id 5*TotalMeshCount
+
+
+int _MeshTypeCount;
+int _DataCount;
+
+//Clear数据
+[numthreads(64,1,1)]
+void ClearGpuCull(uint3 id : SV_DispatchThreadID,int groupIndex:SV_GroupIndex,uint3 groupId:SV_GroupID)
+{
+    if(groupIndex==0)
+    {
+        _AsyncReadBackPackedBuffer[groupId.x * 2] = 0;
+        _AsyncReadBackPackedBuffer[groupId.x * 2 + 1] = 0;
+    }
+    //int dataCount = _DataCount + 1;
+    if(id.x>=_MeshTypeCount * _DataCount)
+        return;
+    _CullInstanceMeshTypeCount[id.x] = 0;
+    _CullInstanceTempCount[id.x] = 0;
+    _LodFadeIds[id.x] = 0;
+
+    const int instanceCountIndex = id.x * 5 + 1;
+    _DrawCallIndirectArgs[instanceCountIndex] = 0;
+
+    const int clusterIndirectArgsCount = _DataCount>ADDITIONAL_SHADOW_DATA_INDEX?3:2;
+    if(id.x < clusterIndirectArgsCount)
+    {
+        _ClusterIndirectArgs[id.x * 3] = 0;
+    }
+
+    if(id.x==0)
+    {
+        _TotalCullCount[id.x] = 0;
+        _CullInstanceTypeIndexStartCount[id.x] = 0;
+    }
+}

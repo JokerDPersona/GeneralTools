@@ -1,0 +1,11 @@
+#pragma kernel ExChnageInstanceCopyTo
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+
+RWStructuredBuffer<InstanceData> _AllCullInstanceData;
+StructuredBuffer<InstanceData> _AllTempCullInstanceData;
+
+[numthreads(64,1,1)]
+void ExChnageInstanceCopyTo(uint3 id : SV_DispatchThreadID)
+{
+    _AllCullInstanceData[id.x] = _AllTempCullInstanceData[id.x];
+}

@@ -1,0 +1,12 @@
+#pragma kernel GenerateMeshImposterCacheData
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+StructuredBuffer<MeshData> _AllGpuMeshBuffer;
+int _MeshTypeCount;
+
+//RWStructuredBuffer<float4> _
+
+[numthreads(64,1,1)]
+void GenerateMeshImposterCacheData (uint3 id : SV_DispatchThreadID)
+{
+    
+}

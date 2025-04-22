@@ -1,0 +1,44 @@
+#pragma kernel CullCluster
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+#include "Assets/Resources/Shader/Include/GpuCullHelper.hlsl"
+#pragma enable_d3d11_debug_symbols
+
+
+uint _NumObject;
+float3 _WorldCenterOffset;//大世界中心位置偏移
+//uniform float4 _CameraFrustumPlanes[6];
+float3 _MainCameraPos;
+
+StructuredBuffer<ClusterData> _AllClusterData;
+RWStructuredBuffer<int> _ClusterIndirectArgs;//本身
+RWStructuredBuffer<int> _CullClusterIds;
+
+
+//视锥裁剪
+bool FrustumCull(GpuBounds bounds)
+{
+    return FrustumCullAABB(bounds); 
+}
+
+
+
+[numthreads(64,1,1)]
+void CullCluster(uint3 id : SV_DispatchThreadID)
+{
+    const int clusterCount = ((_NumObject - 1)/64) + 1;
+    if(id.x>=clusterCount)
+        return;
+    const ClusterData data = _AllClusterData[id.x];
+    GpuBounds clusterBounds = data.bounds;
+    clusterBounds.min+=_WorldCenterOffset;
+    clusterBounds.max+=_WorldCenterOffset;
+    
+    
+    if(!FrustumCull(clusterBounds))
+    {
+        int curIndex = 0;
+        InterlockedAdd(_ClusterIndirectArgs[0],1,curIndex);
+        _CullClusterIds[curIndex] = id.x;
+    }
+    
+}

@@ -1,0 +1,88 @@
+#pragma kernel GenerateInstanceWorldBounds
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+#pragma enable_d3d11_debug_symbols
+uint _NumObject;
+StructuredBuffer<InstanceData> _AllCullInstanceData;//所有的单例数据
+StructuredBuffer<MeshData> _AllGpuMeshBuffer;
+RWStructuredBuffer<GpuBounds> _AllLodInstanceWorldBounds;
+
+
+GpuBounds GenerateInstanceWorldBounds(float3 meshExtend,float3 meshCenter,float4x4 objToWorld)
+{
+    float3 minPos = meshCenter - meshExtend;
+    float3 maxPos = meshCenter + meshExtend;
+
+    float3 boundVerts[8];
+    boundVerts[0] = float3(minPos.x, minPos.y, minPos.z);
+    boundVerts[1] = float3(minPos.x, minPos.y, maxPos.z);
+    boundVerts[2] = float3(maxPos.x, minPos.y, minPos.z);
+    boundVerts[3] = float3(maxPos.x, minPos.y, maxPos.z);
+    boundVerts[4] = float3(minPos.x, maxPos.y, minPos.z);
+    boundVerts[5] = float3(minPos.x, maxPos.y, maxPos.z);
+    boundVerts[6] = float3(maxPos.x, maxPos.y, minPos.z);
+    boundVerts[7] = float3(maxPos.x, maxPos.y, maxPos.z);
+    
+    float xMax = FLOAT_MIN;
+    float xMin = FLOAT_MAX;
+    float yMax = FLOAT_MIN;
+    float yMin = FLOAT_MAX;
+    float zMax = FLOAT_MIN;
+    float zMin = FLOAT_MAX;
+    
+    for (int i = 0; i < 8; i++)
+    {
+        boundVerts[i] = mul(objToWorld,float4(boundVerts[i],1.0f)).xyz;
+        xMax = max(boundVerts[i].x, xMax);
+        xMin = min(boundVerts[i].x, xMin);
+        yMax = max(boundVerts[i].y, yMax);
+        yMin = min(boundVerts[i].y, yMin);
+        zMax = max(boundVerts[i].z, zMax);
+        zMin = min(boundVerts[i].z, zMin);
+    }
+    
+    GpuBounds bounds = (GpuBounds)0;
+    bounds.min = float3(xMin,yMin,zMin);
+    bounds.max = float3(xMax,yMax,zMax);
+    
+    return bounds;
+}
+
+
+[numthreads(64,1,1)]
+void GenerateInstanceWorldBounds (uint3 id : SV_DispatchThreadID)
+{
+     if(id.x>=_NumObject)
+          return;
+
+    const InstanceData data = _AllCullInstanceData[id.x];
+    
+    float3 scale;
+    uint customInstanceId;
+    GetScaleAndCustomInstanceId(data.scaleXZ,data.scaleYAndCustomInstanceId,scale,customInstanceId);
+    float4 quter = GetQuterByPacked(data.quterXY,data.quterZW);
+    float4x4 objToWorld = GetLocalToWorldMatrix(data.pos,quter,scale);
+    
+    const MeshData lod0MeshData = _AllGpuMeshBuffer[data.lod0MeshId];
+    
+    const int lodInstanceBoundIndex = id.x * 4;
+    _AllLodInstanceWorldBounds[lodInstanceBoundIndex] = GenerateInstanceWorldBounds(lod0MeshData.meshExtend,lod0MeshData.meshCenter,objToWorld);
+
+    if(lod0MeshData.lodMeshIds.y!=-1)
+    {
+        const MeshData lod1MeshData = _AllGpuMeshBuffer[lod0MeshData.lodMeshIds.y];
+        _AllLodInstanceWorldBounds[lodInstanceBoundIndex + 1] = GenerateInstanceWorldBounds(lod1MeshData.meshExtend,lod1MeshData.meshCenter,objToWorld);
+    }
+
+    if(lod0MeshData.lodMeshIds.z!=-1)
+    {
+        const MeshData lod2MeshData = _AllGpuMeshBuffer[lod0MeshData.lodMeshIds.z];
+        _AllLodInstanceWorldBounds[lodInstanceBoundIndex + 2] = GenerateInstanceWorldBounds(lod2MeshData.meshExtend,lod2MeshData.meshCenter,objToWorld);
+    }
+
+    if(lod0MeshData.lodMeshIds.w!=-1)
+    {
+        const MeshData lod3MeshData = _AllGpuMeshBuffer[lod0MeshData.lodMeshIds.w];
+        _AllLodInstanceWorldBounds[lodInstanceBoundIndex + 3] = GenerateInstanceWorldBounds(lod3MeshData.meshExtend,lod3MeshData.meshCenter,objToWorld);
+    }
+    
+}

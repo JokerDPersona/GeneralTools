@@ -1,0 +1,284 @@
+#pragma kernel CullCascadeShadowInstance
+
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+
+
+#pragma enable_d3d11_debug_symbols
+#pragma multi_compile _ _REVERSE_Z
+#pragma multi_compile _ ENABLE_HIZ_CULL
+#pragma multi_compile _ _ENABLE_CLUSTER
+
+uint _NumObject;
+int _CascadeCount;
+float3 _LightDirection;
+float4 _CascadeDis;
+
+float4x4 _ShadowTransforms[4];
+float4 _ShadowBiass[4];
+
+
+float3 _WorldCenterOffset; //大世界中心位置偏移
+float _MoveDisOneFrame;
+float3 _MainCameraPos;
+
+#if _ENABLE_CLUSTER
+StructuredBuffer<int> _CullShadowClusterIds;
+#endif
+StructuredBuffer<InstanceData> _AllCullInstanceData; //所有的单例数据
+StructuredBuffer<GpuBounds> _AllLodInstanceWorldBounds;
+StructuredBuffer<MeshData> _AllGpuMeshBuffer;
+
+RWStructuredBuffer<uint> _CullInstanceMeshTypeCount; //本身+阴影 级联下标*Mesh总数+该类型
+RWStructuredBuffer<uint> _TotalCullCount; //阴影 索引为级联下标
+
+RWStructuredBuffer<uint> _CullInstanceTempData; //剔除后的id，未经过排序
+RWStructuredBuffer<uint> _LodFadeIds; //lod过渡回读id 5*TotalMeshCount
+int _MeshTypeCount;
+
+
+//uniform float4 _CameraFrustumPlanes[6];
+float _MaxShadowCasterRadiusCullByViewFrustum;
+float _ShadowCasterExtendScaleCullByViewFrustum;
+float _MaxRadiusOnHiz;
+float _HizBias;
+
+
+float3 ApplyShadowBias(float3 positionWS, float3 normalWS, float3 lightDirection, float4 bias)
+{
+    float invNdotL = 1.0 - saturate(dot(lightDirection, normalWS));
+    float scale = invNdotL * bias.y;
+
+    // normal bias is negative since we want to apply an inset normal offset
+    positionWS = lightDirection * bias.xxx + positionWS;
+    positionWS = normalWS * scale.xxx + positionWS;
+    return positionWS;
+}
+
+
+bool ShadowCascadeCasterCull(GpuBounds bounds, float4x4 shadowTransform, float4 bias)
+{
+    float3 minPos = bounds.min;
+    float3 maxPos = bounds.max;
+
+    float4 boundVerts[8];
+    boundVerts[0] = float4(minPos.x, minPos.y, minPos.z, 1);
+    boundVerts[1] = float4(minPos.x, minPos.y, maxPos.z, 1);
+    boundVerts[2] = float4(maxPos.x, minPos.y, minPos.z, 1);
+    boundVerts[3] = float4(maxPos.x, minPos.y, maxPos.z, 1);
+    boundVerts[4] = float4(minPos.x, maxPos.y, minPos.z, 1);
+    boundVerts[5] = float4(minPos.x, maxPos.y, maxPos.z, 1);
+    boundVerts[6] = float4(maxPos.x, maxPos.y, minPos.z, 1);
+    boundVerts[7] = float4(maxPos.x, maxPos.y, maxPos.z, 1);
+
+    //记录NDC空间中水平坐标的最小最大值
+    float xMax = -10000.0f;
+    float xMin = 10000.0f;
+    float yMax = -10000.0f;
+    float yMin = 10000.0f;
+
+    for (int i = 0; i < 8; i++)
+    {
+        boundVerts[i].xyz = ApplyShadowBias(boundVerts[i].xyz, float3(0, 1, 0), _LightDirection, bias);
+        float4 posCS = mul(shadowTransform, boundVerts[i]);
+        xMax = max(posCS.x, xMax);
+        xMin = min(posCS.x, xMin);
+        yMax = max(posCS.y, yMax);
+        yMin = min(posCS.y, yMin);
+    }
+
+    float maxNDCSide = abs(mul(shadowTransform, boundVerts[0]).w);
+
+    bool overlapX = xMax >= -maxNDCSide && xMin <= maxNDCSide;
+    bool overlapY = yMax >= -maxNDCSide && yMin <= maxNDCSide;
+
+    return !(overlapX && overlapY);
+}
+
+float GetCascadeDis(int cascadeIndex)
+{
+    if (cascadeIndex == 0)
+        return _CascadeDis.x;
+    else if (cascadeIndex == 1)
+        return _CascadeDis.y;
+    else if (cascadeIndex == 2)
+        return _CascadeDis.z;
+    else
+        return _CascadeDis.w;
+}
+
+
+bool CheckInterectOrOutSideCascadeDis(GpuBounds bounds, int cascadeIndex)
+{
+    float3 minPos = bounds.min;
+    float3 maxPos = bounds.max;
+
+    float4 boundVerts[8];
+    boundVerts[0] = float4(minPos.x, minPos.y, minPos.z, 1);
+    boundVerts[1] = float4(minPos.x, minPos.y, maxPos.z, 1);
+    boundVerts[2] = float4(maxPos.x, minPos.y, minPos.z, 1);
+    boundVerts[3] = float4(maxPos.x, minPos.y, maxPos.z, 1);
+    boundVerts[4] = float4(minPos.x, maxPos.y, minPos.z, 1);
+    boundVerts[5] = float4(minPos.x, maxPos.y, maxPos.z, 1);
+    boundVerts[6] = float4(maxPos.x, maxPos.y, minPos.z, 1);
+    boundVerts[7] = float4(maxPos.x, maxPos.y, maxPos.z, 1);
+
+    bool isInAll = true;
+    for (int i = 0; i < 8; i++)
+    {
+        float dis = distance(boundVerts[i], _MainCameraPos);
+        if (dis > GetCascadeDis(cascadeIndex))
+        {
+            isInAll = false;
+            break;
+        }
+    }
+
+    return !isInAll;
+}
+
+//视锥裁剪
+bool FrustumCull(GpuBounds bounds)
+{
+    return FrustumCullAABB(bounds);
+}
+
+
+bool IsCull(GpuBounds bounds, bool enableHiz)
+{
+    if (FrustumCull(bounds))
+    {
+        return true;
+    }
+
+    if (enableHiz)
+    {
+        #if ENABLE_HIZ_CULL
+        float3 minBias = normalize(bounds.min - _MainCameraPos) * _HizBias;
+        float3 maxBias = normalize(bounds.max - _MainCameraPos) * _HizBias;
+        if(HizOcclusionCull(bounds.min - minBias,bounds.max - maxBias)){
+            return true;
+        }
+        #endif
+    }
+
+    return false;
+}
+
+
+[numthreads(64,1,1)]
+void CullCascadeShadowInstance(uint3 id : SV_DispatchThreadID, uint3 groupId:SV_GroupID, int groupIndex:SV_GroupIndex)
+{
+    #if _ENABLE_CLUSTER
+    const int clusterId = _CullShadowClusterIds[groupId.x];
+    const int instanceId = clusterId * 64 + groupIndex;
+    #else
+    const int instanceId = id.x;
+    #endif
+
+    if (instanceId >= _NumObject)
+        return;
+
+    const InstanceData data = _AllCullInstanceData[instanceId];
+    float3 scale;
+    uint customInstanceId;
+    GetScaleAndCustomInstanceId(data.scaleXZ, data.scaleYAndCustomInstanceId, scale, customInstanceId);
+    const MeshData lod0MeshData = _AllGpuMeshBuffer[data.lod0MeshId];
+    const float3 center = data.pos + lod0MeshData.meshCenter * scale;
+    const float dis = distance(center + _WorldCenterOffset, _MainCameraPos);
+    const float maxScale = max(scale.x, max(scale.y, scale.z));
+    const float4 realLodDistance = lod0MeshData.lodDistacne * maxScale;
+    const int lodLevel = GetLodLevel(realLodDistance, dis);
+    const int meshLodType = GetLodMeshId(lod0MeshData.lodMeshIds, lodLevel);
+    if (meshLodType == -1) //说明远处的lod未配置，所以直接剔除掉
+        return;
+    const MeshData curlodMeshData = _AllGpuMeshBuffer[meshLodType];
+    if (curlodMeshData.enableShadowCaster == 0) //说明业务逻辑不允许这个Mesh进行阴影投射
+        return;
+
+    const GpuBounds instanceBounds = _AllLodInstanceWorldBounds[instanceId * 4 + lodLevel];
+    const float3 extend = (instanceBounds.max - instanceBounds.min) / 2.0f;
+    const float instanceRadius = length(extend);
+
+
+    for (int i = 0; i < _CascadeCount; ++i)
+    {
+        const int dataIndex = i + 1; //阴影数据偏移，第一份数据为主绘制数据
+        bool visible = !ShadowCascadeCasterCull(instanceBounds, _ShadowTransforms[i], _ShadowBiass[i]);
+        if (i > 0)
+            visible = visible && CheckInterectOrOutSideCascadeDis(instanceBounds, i - 1);
+
+        if (visible)
+        {
+            if (instanceRadius < _MaxShadowCasterRadiusCullByViewFrustum)
+            {
+                //小物体的话，把Bounds扩大进行主相机剔除，尽量减少无用的阴影绘制
+                GpuBounds frustumInstanceBounds = instanceBounds;
+                float maxExtend = max(extend.x, max(extend.y, extend.z)); //考虑到有树这种比较长的物体，影子可能会拉得比较长,所以取最大
+                float3 frustmExtent = min(maxExtend.xxx * _ShadowCasterExtendScaleCullByViewFrustum,
+                                          _MaxShadowCasterRadiusCullByViewFrustum.xxx);
+                frustumInstanceBounds.min -= frustmExtent;
+                frustumInstanceBounds.max += frustmExtent;
+                bool enableHiz = (lod0MeshData.disableHiz == 0 ? true : false) && maxExtend < _MaxRadiusOnHiz;
+                if (!IsCull(frustumInstanceBounds, enableHiz))
+                {
+                    const int shadowMeshTypeOffset = _MeshTypeCount * dataIndex;
+                    const int cascadeShadowMeshType = meshLodType + shadowMeshTypeOffset;
+                    const int curMeshTypeCount = _CullInstanceMeshTypeCount[cascadeShadowMeshType];
+                    if (curMeshTypeCount < MESH_TYPE_RENDER_COUNT)
+                    {
+                        InterlockedAdd(_CullInstanceMeshTypeCount[cascadeShadowMeshType], 1);
+                        int curIndex = 0;
+                        InterlockedAdd(_TotalCullCount[0], 1, curIndex);
+
+                        _CullInstanceTempData[curIndex] = PackInstanceTempData(instanceId, lodLevel, dataIndex);
+
+                        //通过裁剪后检测并记录lod过渡id                                                 
+                        const int lodFadeId = GetLodFadeId(lod0MeshData.lodMeshIds, lodLevel, realLodDistance, dis,
+                                                           _MoveDisOneFrame);
+                        if (lodFadeId != -1)
+                        {
+                            const MeshData fadelodMeshData = _AllGpuMeshBuffer[lodFadeId];
+                            if (fadelodMeshData.enableShadowCaster)
+                            {
+                                const int lodFadeCascadeShadowMeshType = lodFadeId + shadowMeshTypeOffset;
+                                const int fadeIndex = lodFadeCascadeShadowMeshType / 32;
+                                const int moveIndex = lodFadeCascadeShadowMeshType % 32;
+                                InterlockedOr(_LodFadeIds[fadeIndex], 1 << moveIndex);
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                const int shadowMeshTypeOffset = _MeshTypeCount * dataIndex;
+                const int cascadeShadowMeshType = meshLodType + shadowMeshTypeOffset;
+                const int curMeshTypeCount = _CullInstanceMeshTypeCount[cascadeShadowMeshType];
+                if (curMeshTypeCount < MESH_TYPE_RENDER_COUNT)
+                {
+                    InterlockedAdd(_CullInstanceMeshTypeCount[cascadeShadowMeshType], 1);
+                    int curIndex = 0;
+                    InterlockedAdd(_TotalCullCount[0], 1, curIndex);
+
+                    _CullInstanceTempData[curIndex] = PackInstanceTempData(instanceId, lodLevel, dataIndex);
+
+
+                    //通过裁剪后检测并记录lod过渡id
+                    const int lodFadeId = GetLodFadeId(lod0MeshData.lodMeshIds, lodLevel, realLodDistance, dis,
+                                                       _MoveDisOneFrame);
+                    if (lodFadeId != -1)
+                    {
+                        const MeshData fadelodMeshData = _AllGpuMeshBuffer[lodFadeId];
+                        if (fadelodMeshData.enableShadowCaster)
+                        {
+                            const int lodFadeCascadeShadowMeshType = lodFadeId + shadowMeshTypeOffset;
+                            const int fadeIndex = lodFadeCascadeShadowMeshType / 32;
+                            const int moveIndex = lodFadeCascadeShadowMeshType % 32;
+                            InterlockedOr(_LodFadeIds[fadeIndex], 1 << moveIndex);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

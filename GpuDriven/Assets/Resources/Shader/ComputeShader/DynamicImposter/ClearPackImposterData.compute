@@ -1,0 +1,18 @@
+#pragma kernel ClearPackImposterData
+#include "../../CommonInclude/DynamicImposterCommon.hlsl"
+
+RWStructuredBuffer<uint> _AllPackDynamicImposterId;
+RWStructuredBuffer<int> _SelectPackImposterIds;
+int _PackNodeDescCount;
+int _MaxImposterIdReadBackCount;
+
+[numthreads(64,1,1)]
+void ClearPackImposterData (uint3 id : SV_DispatchThreadID)
+{
+    if(id.x > _PackNodeDescCount)
+        return;
+
+    _AllPackDynamicImposterId[id.x] = 0;
+    if(id.x < _MaxImposterIdReadBackCount)
+        _SelectPackImposterIds[id.x] = -1;
+}

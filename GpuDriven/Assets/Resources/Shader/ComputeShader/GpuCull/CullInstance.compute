@@ -1,0 +1,160 @@
+
+#pragma kernel CullInstance
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+#include "Assets/Resources/Shader/Include/GpuCullHelper.hlsl"
+#pragma enable_d3d11_debug_symbols
+
+#pragma multi_compile _ _REVERSE_Z
+#pragma multi_compile _ ENABLE_HIZ_CULL
+#pragma multi_compile _ _ENABLE_CLUSTER
+#pragma multi_compile _ _ENABLE_DYNAMIC_IMPOSTER
+
+#include "../../CommonInclude/DynamicImposterCommon.hlsl"
+
+uint _NumObject;
+float _HizBias;
+float _MaxRadiusOnHiz;
+float3 _WorldCenterOffset;//大世界中心位置偏移
+float _MoveDisOneFrame;
+//裁剪相关变量
+float3 _MainCameraPos;
+float3 _MainCameraForward;
+
+
+//uniform float4 _CameraFrustumPlanes[6];
+
+StructuredBuffer<InstanceData> _AllCullInstanceData;//所有的单例数据
+StructuredBuffer<GpuBounds> _AllLodInstanceWorldBounds;
+StructuredBuffer<MeshData> _AllGpuMeshBuffer;
+RWStructuredBuffer<uint> _CullInstanceMeshTypeCount;//序号为Mesh的id、值为对应Mesh类型的数量，这个数据需要回读
+RWStructuredBuffer<uint> _TotalCullCount;//总计数
+RWStructuredBuffer<uint> _CullInstanceTempData;//剔除后的id，未经过排序
+RWStructuredBuffer<uint> _LodFadeIds;//lod过渡回读id 5*TotalMeshCount
+
+#if _ENABLE_CLUSTER
+StructuredBuffer<int> _CullClusterIds;
+#endif
+
+#if _ENABLE_DYNAMIC_IMPOSTER
+RWStructuredBuffer<uint> _AllPackDynamicImposterId;
+float _DynamicImposterDis;
+int _MeshTypeCount;
+int _DataCount;
+int _AxisFrames;
+#endif 
+
+//视锥裁剪
+bool FrustumCull(GpuBounds bounds)
+{
+    return FrustumCullAABB(bounds); 
+}
+
+
+bool IsCull(GpuBounds bounds,bool enableHiz)
+{
+    if(FrustumCull(bounds)){
+        return true;
+    }
+    
+    if(enableHiz)
+    {
+        #if ENABLE_HIZ_CULL
+        float3 minBias = normalize(bounds.min - _MainCameraPos) * _HizBias;
+        float3 maxBias = normalize(bounds.max - _MainCameraPos) * _HizBias;
+        if(HizOcclusionCull(bounds.min - minBias,bounds.max - maxBias)){
+          return true;
+        }
+        #endif
+        
+    }
+
+    return false;
+}
+
+[numthreads(64,1,1)]
+void CullInstance(uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GroupID,int groupIndex:SV_GroupIndex)
+{
+    #if _ENABLE_CLUSTER
+    const int clusterId = _CullClusterIds[groupId.x];
+    const int instanceId = clusterId * 64 + groupIndex;
+    #else
+    const int instanceId = id.x;
+    #endif
+    
+    if(instanceId>=_NumObject)
+         return;
+     
+    const InstanceData data = _AllCullInstanceData[instanceId];
+    float3 scale;
+    uint customInstanceId;
+    GetScaleAndCustomInstanceId(data.scaleXZ,data.scaleYAndCustomInstanceId,scale,customInstanceId);
+    const MeshData lod0MeshData = _AllGpuMeshBuffer[data.lod0MeshId];
+    const float3 center = data.pos + lod0MeshData.meshCenter * scale;
+    const float dis = distance(center + _WorldCenterOffset,_MainCameraPos);
+    const float maxScale = max(scale.x,max(scale.y,scale.z));
+    const float4 realLodDistance = lod0MeshData.lodDistacne * maxScale;
+    const int lodLevel = GetLodLevel(realLodDistance,dis);
+    int meshLodType = GetLodMeshId(lod0MeshData.lodMeshIds,lodLevel);
+    if(meshLodType==-1)//说明远处的lod未配置，所以直接剔除掉
+        return;
+    
+    const GpuBounds instanceBounds = _AllLodInstanceWorldBounds[instanceId * 4 + lodLevel];
+    const float3 extend = (instanceBounds.max - instanceBounds.min)/2.0f;
+    
+    float maxExtend = max(extend.x,max(extend.y,extend.z));
+    bool enableHiz = (lod0MeshData.disableHiz == 0? true:false) && maxExtend < _MaxRadiusOnHiz;
+
+    
+    if(!IsCull(instanceBounds,enableHiz))
+    {
+        #if _ENABLE_DYNAMIC_IMPOSTER
+        bool enableDynamicImposter = false;
+        if(lod0MeshData.enableDynamicImposter==1)
+        {
+            enableDynamicImposter = _DynamicImposterDis>maxExtend/max(0.1f,dis);
+            if(enableDynamicImposter)
+            {
+                meshLodType = _MeshTypeCount * _DataCount + lod0MeshData.runnerImposterMaterialType;
+            }
+        }
+        #endif 
+        
+        const int curMeshTypeCount = _CullInstanceMeshTypeCount[meshLodType];
+        if(curMeshTypeCount<MESH_TYPE_RENDER_COUNT)//将单次最大绘制数量限制在一定数值下，不然在手机端可能会崩溃
+        {
+            InterlockedAdd(_CullInstanceMeshTypeCount[meshLodType],1);
+            int curIndex = 0;
+            InterlockedAdd(_TotalCullCount[0],1,curIndex);
+
+            #if _ENABLE_DYNAMIC_IMPOSTER
+            if(enableDynamicImposter)
+            {
+                const float4 quter = GetQuterByPacked(data.quterXY,data.quterZW);
+                const uint dynamicImposterDirIntId = GetDynamicImposterDirIntId(_AxisFrames,_WorldSpaceCameraPos,center,quter,scale);
+                _CullInstanceTempData[curIndex] = PackFlagToTempData(PackImposterInstanceTempData(instanceId,dynamicImposterDirIntId),1);
+                const int imposterId = GetDynamicImposterId(_AxisFrames,data.lod0MeshId,_WorldSpaceCameraPos,center,quter,scale);
+                const int fadeIndex = imposterId/32;
+                const int moveIndex = imposterId%32;
+
+                InterlockedOr(_AllPackDynamicImposterId[fadeIndex],1 << moveIndex);
+            }else
+            {
+                _CullInstanceTempData[curIndex] = PackFlagToTempData(PackInstanceTempData(instanceId,lodLevel,0),0);
+            }
+            #else
+            _CullInstanceTempData[curIndex] = PackInstanceTempData(instanceId,lodLevel,0);
+            #endif 
+            
+            
+            //通过裁剪后检测并记录lod过渡id                     
+            const int lodFadeId = GetLodFadeId(lod0MeshData.lodMeshIds,lodLevel,realLodDistance,dis,_MoveDisOneFrame);
+            if(lodFadeId!=-1)
+            {
+                const int fadeIndex = lodFadeId/32;
+                const int moveIndex = lodFadeId%32;
+                InterlockedOr(_LodFadeIds[fadeIndex],1 << moveIndex);
+            }
+            
+        }
+    }
+}

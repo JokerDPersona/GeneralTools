@@ -1,0 +1,53 @@
+#pragma kernel ComputeAsyncReadBackData
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+#pragma enable_d3d11_debug_symbols
+StructuredBuffer<uint> _CullInstanceMeshTypeCount;//序号为Mesh的id、值为对应Mesh类型的数量，这个数据需要回读
+StructuredBuffer<uint> _LodFadeIds;//lod过渡回读id 5*TotalMeshCount
+RWStructuredBuffer<uint> _AsyncReadBackPackedBuffer;//
+int _MeshTypeCount;
+int _DataCount;
+
+groupshared uint gs_MeshTypeCount[64];
+groupshared uint gs_PackMeshTypeCount0 = 0;
+groupshared uint gs_PackMeshTypeCount1 = 0;
+
+
+[numthreads(64,1,1)]
+void ComputeAsyncReadBackData(uint3 id : SV_DispatchThreadID,uint3 groupId:SV_GroupID,uint3 groupThreadId:SV_GroupThreadID,int groupIndex:SV_GroupIndex)
+{
+    if(groupIndex == 0)
+    {
+        gs_PackMeshTypeCount0 = 0;
+        gs_PackMeshTypeCount1 = 0;
+    }
+    
+    const int needRender = _CullInstanceMeshTypeCount[id.x]>0?1:0;
+
+    const int fadeIndex = id.x/32;
+    const int moveIndex = id.x%32;
+    
+    const int fadeIdRecord = ((_LodFadeIds[fadeIndex]>>moveIndex)&0x1);
+    if(id.x>=_MeshTypeCount*_DataCount)
+    {
+        gs_MeshTypeCount[groupIndex] = 0;
+    }else
+    {
+        gs_MeshTypeCount[groupIndex] = max(needRender,fadeIdRecord);
+    }
+    
+    GroupMemoryBarrierWithGroupSync();
+    if(groupIndex<32)
+    {
+        InterlockedOr(gs_PackMeshTypeCount0,gs_MeshTypeCount[groupIndex]<<groupThreadId.x);   
+    }
+    else
+    {
+        InterlockedOr(gs_PackMeshTypeCount1,gs_MeshTypeCount[groupIndex]<<(groupThreadId.x-32));   
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if(groupIndex==0)
+    {
+        _AsyncReadBackPackedBuffer[groupId.x * 2] = gs_PackMeshTypeCount0;
+        _AsyncReadBackPackedBuffer[groupId.x * 2 + 1] = gs_PackMeshTypeCount1;
+    }
+}

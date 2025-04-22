@@ -1,0 +1,14 @@
+#pragma kernel ClearCollectAsyncReadBackData
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+#pragma enable_d3d11_debug_symbols
+
+RWStructuredBuffer<int> _CollectReadBackPackedBuffer;
+int _MaxGpuDrivenDrawCallCount;
+
+[numthreads(64,1,1)]
+void ClearCollectAsyncReadBackData (uint3 id : SV_DispatchThreadID)
+{
+    if(id.x>_MaxGpuDrivenDrawCallCount)
+       return;
+    _CollectReadBackPackedBuffer[id.x] = 0;
+}

@@ -1,0 +1,80 @@
+#pragma kernel CollectCullData
+#include "../../CommonInclude/GPUDrivenCommon.hlsl"
+#pragma enable_d3d11_debug_symbols
+
+#pragma multi_compile _ _ENABLE_DYNAMIC_IMPOSTER
+#include "../../CommonInclude/DynamicImposterCommon.hlsl"
+
+StructuredBuffer<uint> _TotalCullCount;//总计数
+StructuredBuffer<uint> _CullInstanceTempData;//剔除后的id，未经过排序
+
+StructuredBuffer<InstanceData> _AllCullInstanceData;//所有的单例数据
+StructuredBuffer<MeshData> _AllGpuMeshBuffer;
+StructuredBuffer<uint> _CullInstanceTypeIndexStart;//对应lodMesh类型的Instance的起始下标
+RWStructuredBuffer<uint> _CullInstanceTempCount;// 剔除后的数据计数器
+RWStructuredBuffer<uint> _CullInstanceId;//剔除后的实例数据，按Mesh子类型排序
+int _MeshTypeCount;
+
+#if _ENABLE_DYNAMIC_IMPOSTER
+int _DataCount;
+#endif
+
+
+
+[numthreads(64,1,1)]
+void CollectCullData (uint3 id : SV_DispatchThreadID)
+{
+    if(id.x>=_TotalCullCount[0])
+        return;
+    
+    const uint packData = _CullInstanceTempData[id.x];
+
+    #if _ENABLE_DYNAMIC_IMPOSTER   
+    uint tempData,flag;
+    UnpackImposterInstanceTempData(packData,tempData,flag);
+    const bool isImposter = flag == 1;
+    if(isImposter)
+    {
+        uint index,dynamicImposterDirIntId;
+        UnpackImposterInstanceTempData(packData,index,dynamicImposterDirIntId);
+    
+        const InstanceData data = _AllCullInstanceData[index];
+        const MeshData lod0MeshData = _AllGpuMeshBuffer[data.lod0MeshId];
+        const int imposterMaterialId = lod0MeshData.runnerImposterMaterialType;
+        const int dataMeshType = _MeshTypeCount * _DataCount + imposterMaterialId;
+        int curImposterMaterialTypeIndex = 0;
+        InterlockedAdd(_CullInstanceTempCount[dataMeshType],1,curImposterMaterialTypeIndex);
+        const int startIndex = _CullInstanceTypeIndexStart[dataMeshType];
+    
+        _CullInstanceId[startIndex + curImposterMaterialTypeIndex] = tempData;
+        
+    }else
+    {
+        uint index,lodLevel,dataIndex;
+        UnpackInstanceTempData(tempData,index,lodLevel,dataIndex);
+        const InstanceData data = _AllCullInstanceData[index];
+        const MeshData lod0MeshData = _AllGpuMeshBuffer[data.lod0MeshId];
+    
+        const int meshType = GetLodMeshId(lod0MeshData.lodMeshIds,lodLevel);
+        const int dataMeshType = meshType + _MeshTypeCount * dataIndex;
+        int curMeshTypeIndex = 0;
+        InterlockedAdd(_CullInstanceTempCount[dataMeshType],1,curMeshTypeIndex);
+        const int startIndex = _CullInstanceTypeIndexStart[dataMeshType];
+    
+        _CullInstanceId[startIndex + curMeshTypeIndex] = index;
+    }
+    #else
+    uint index,lodLevel,dataIndex;
+    UnpackInstanceTempData(packData,index,lodLevel,dataIndex);
+    const InstanceData data = _AllCullInstanceData[index];
+    const MeshData lod0MeshData = _AllGpuMeshBuffer[data.lod0MeshId];
+    
+    const int meshType = GetLodMeshId(lod0MeshData.lodMeshIds,lodLevel);
+    const int dataMeshType = meshType + _MeshTypeCount * dataIndex;
+    int curMeshTypeIndex = 0;
+    InterlockedAdd(_CullInstanceTempCount[dataMeshType],1,curMeshTypeIndex);
+    const int startIndex = _CullInstanceTypeIndexStart[dataMeshType];
+    _CullInstanceId[startIndex + curMeshTypeIndex] = index;
+    #endif
+    
+}
