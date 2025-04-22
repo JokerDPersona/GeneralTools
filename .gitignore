@@ -20,6 +20,15 @@
 /Rendering/[Mm]emoryCaptures/
 /Rendering/[Uu]serSettings/
 
+/GpuDriven/[Ll]ibrary/
+/GpuDriven/[Tt]emp/
+/GpuDriven/[Oo]bj/
+/GpuDriven/[Bb]uild/
+/GpuDriven/[Bb]uilds/
+/GpuDriven/[Ll]ogs/
+/GpuDriven/[Mm]emoryCaptures/
+/GpuDriven/[Uu]serSettings/
+
 
 # Asset meta data should only be ignored when the corresponding asset is also ignored
 /GeneralTools/[Aa]ssets/**/*.meta
