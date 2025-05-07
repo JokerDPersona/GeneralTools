@@ -1,0 +1,113 @@
+#pragma kernel HierarchicalCulling
+
+// 节点数据
+struct NodeData
+{
+    float3 center;
+    float3 size;
+    int lodLevel;
+    float distanceToCamera;
+};
+
+// 常量缓冲区
+cbuffer CullingParams
+{
+    float4 _CameraPosition;
+    float4 _LODRanges[8]; // LOD等级对应的距离范围 x: max distance
+    float4x4 _ViewProjMatrix;
+    float4 _AOIParams; // AOI参数 xyz: center,w:radius
+}
+
+// 输入输出缓冲区
+RWStructuredBuffer<NodeData> _Nodes;
+// 缓冲区长度
+uint _NodeLength;
+AppendStructuredBuffer<uint> _VisibleInstance;
+
+// 子函数
+void GetFrustumPlanes(float4x4 viewProj, out float4 planes[6])
+{
+    // 从VP矩阵提取视锥体平面
+    planes[0] = viewProj[3] + viewProj[0]; // left
+    planes[1] = viewProj[3] - viewProj[0]; // right
+    planes[2] = viewProj[3] + viewProj[1]; // bottom
+    planes[3] = viewProj[3] - viewProj[1]; // top
+    planes[4] = viewProj[3] + viewProj[2]; // near
+    planes[5] = viewProj[3] - viewProj[2]; // far
+
+    // 规范化平面方程
+    for (int i = 0; i < 6; i++)
+    {
+        float planeLength = length(planes[i].xyz);
+        planes[i] /= planeLength;
+    }
+}
+
+bool DistanceCulling(NodeData node)
+{
+    float maxDistance = _LODRanges[node.lodLevel].x;
+    return node.distanceToCamera > maxDistance;
+}
+
+bool AOICulling(float3 position)
+{
+    float3 aoiCenter = _AOIParams.xyz;
+    float aoiRadius = _AOIParams.w;
+    return distance(position, aoiCenter) > aoiRadius;
+}
+
+bool FrustumCulling(float3 center, float3 extents)
+{
+    // 视锥检测
+    float4 planes[6];
+    GetFrustumPlanes(_ViewProjMatrix, planes);
+
+    for (int i = 0; i < 6; i++)
+    {
+        float3 normal = planes[i].xyz;
+        float d = planes[i].w;
+        float distance = dot(center, normal) + d;
+        float radius = dot(extents, abs(normal));
+        if (distance + radius < 0)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool OcclusionCulling(float3 center, float3 size)
+{
+    // 深度缓冲查询
+    // 需要接入HI-Z buffer
+    return true;
+}
+
+[numthreads(64,1,1)]
+void HierarchicalCulling(uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _NodeLength)
+    {
+        return;
+    }
+
+    NodeData node = _Nodes[idx];
+
+    // 更新节点到相机的距离
+    node.distanceToCamera = distance(node.center, _CameraPosition.xyz);
+    _Nodes[idx] = node;
+
+    // 层级式剔除流程
+    if (DistanceCulling(node))
+        return;
+    if (AOICulling(node.center))
+        return;
+    if (!FrustumCulling(node.center, node.size * 0.5))
+        return;
+    if (!OcclusionCulling(node.center, node.size))
+        return;
+
+    // 通过所有测试的可见节点
+    _VisibleInstance.Append(idx);
+}

@@ -1,9 +1,10 @@
-Shader "Custom/GPUInstancedTerrain"
+Shader "Custom/TerrainInstanced"
 {
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
     }
+
     SubShader
     {
         Tags
@@ -21,12 +22,14 @@ Shader "Custom/GPUInstancedTerrain"
             #include "UnityCG.cginc"
             #include "FrustumCulling.compute"
 
+            StructuredBuffer<NodeData> _NodesBuffer;
+            StructuredBuffer<int> _VisibleIndicesBuffer;
 
             struct appdata
             {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
-                uint instanceID:SV_InstanceID;
+                uint instanceID : SV_InstanceID;
             };
 
             struct v2f
@@ -35,49 +38,35 @@ Shader "Custom/GPUInstancedTerrain"
                 float2 uv : TEXCOORD0;
             };
 
-            StructuredBuffer<float4x4> _InstanceData;
-            sampler2D _MainTex;
-
-            float4 CalculateWorldPosition(appdata v)
+            v2f vert(appdata v)
             {
-                float4x4 martix = _InstanceData[v.instanceID];
-                return mul(martix, v.vertex);
-            }
+                v2f o;
 
-            StructuredBuffer<NodeData> _NodeBuffer;
-            StructuredBuffer<uint> _VisibleBuffer;
+                // 获取实际节点索引
+                int realIndex = _VisibleIndicesBuffer[v.instanceID];
+                float3 center = _NodesBuffer[realIndex].center;
+                float3 size = _NodesBuffer[realIndex].size;
 
-            void ApplyLODTransition(int lodLevel, float4 worldPos)
-            {
-                
-            }
-
-            v2f vert(appdata v, uint instanceID:SV_InstanceID)
-            {
-                // 通过可见缓冲区获得实际索引
-                uint realIndex = _VisibleBuffer[instanceID];
-                NodeData node = _NodeBuffer[realIndex];
                 // 构建实例矩阵
-                float4x4 martix = {
-                    node.size.x, 0, 0, node.center.x,
-                    0, node.size.y, 0, node.center.y,
-                    0, 0, node.size.z, node.center.z,
+                float4x4 instanceMatrix = {
+                    size.x, 0, 0, center.x,
+                    0, size.y, 0, center.y,
+                    0, 0, size.z, center.z,
                     0, 0, 0, 1
                 };
+
                 // 变换顶点
-                float4 worldPos = mul(martix, v.vertex);
-                v2f o;
+                float4 worldPos = mul(instanceMatrix, v.vertex);
                 o.pos = mul(UNITY_MATRIX_VP, worldPos);
                 o.uv = v.uv;
-                // LOD混合计算
-                ApplyLODTransition(node.lodLevel, worldPos);
                 return o;
             }
 
+            sampler2D _MainTex;
+
             fixed4 frag(v2f i) : SV_Target
             {
-                fixed4 col = tex2D(_MainTex, i.uv);
-                return col;
+                return tex2D(_MainTex, i.uv);
             }
             ENDCG
         }

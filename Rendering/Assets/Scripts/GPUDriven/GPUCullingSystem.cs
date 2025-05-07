@@ -1,141 +1,129 @@
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using UnityEngine;
-
 namespace QuadTree
 {
+    using UnityEngine;
+    using System.Runtime.InteropServices;
+
+    /// <summary>
+    /// GPU剔除系统
+    /// </summary>
     public class GPUCullingSystem : MonoBehaviour
     {
         private static readonly int ViewProjMatrix = Shader.PropertyToID("_ViewProjMatrix");
-        private static readonly int Nodes = Shader.PropertyToID("Nodes");
-        private static readonly int VisibleInstances = Shader.PropertyToID("VisibleInstances");
-        private static readonly int NodeBuffer = Shader.PropertyToID("_NodeBuffer");
-        private static readonly int VisibleBuffer = Shader.PropertyToID("_VisibleBuffer");
-        private static readonly int NodeCount = Shader.PropertyToID("_NodeCount");
-        public ComputeShader CullingShader { get; private set; }
-        public Camera MainCamera { get; private set; }
+        private static readonly int Nodes = Shader.PropertyToID("_Nodes");
+        private static readonly int VisibleIndices = Shader.PropertyToID("_VisibleIndices");
+        private static readonly int NodeCount = Shader.PropertyToID("nodeCount");
+        [Header("Compute Shaders")] public ComputeShader cullingShader;
+        private int cullingKernel;
 
-        /// <summary>
-        /// 节点数据
-        /// </summary>
-        private ComputeBuffer _nodeBuffer;
+        [Header("Rendering")] public Mesh terrainMesh;
+        public Material terrainMaterial;
 
-        /// <summary>
-        /// 可见结果
-        /// </summary>
-        private ComputeBuffer _visibleBuffer;
+        public QuadTreeManager QuadTreeManager { get; private set; }
 
-        /// <summary>
-        /// 间接绘制参数
-        /// </summary>
-        private ComputeBuffer _argsBuffer;
+        // 计算缓冲区
+        private ComputeBuffer nodeBuffer;
+        private ComputeBuffer visibleBuffer;
+        private ComputeBuffer argsBuffer;
 
-        private QuadTreeManager _quadTreeManager;
-        private List<QuadTreeNode> _allNodes = new();
-        [SerializeField] private Mesh terrainMesh;
-        [SerializeField] private Material terrainMaterial;
+        // 间接绘制参数
+        private uint[] args = new uint[5] { 0, 0, 0, 0, 0 };
 
-        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        // 节点数据结构
         struct NodeData
         {
-            public Vector3 Center { get; set; }
-            public float LodLevel { get; set; }
-            public Vector3 Size { get; set; }
+            public Vector3 center;
+            public Vector3 size;
+            public int lodLevel;
         }
 
-        private void Start()
+        void Start()
         {
-            _quadTreeManager = GetComponent<QuadTreeManager>();
             InitializeBuffers();
+            cullingKernel = cullingShader.FindKernel("FrustumCulling");
+            QuadTreeManager = GetComponent<QuadTreeManager>();
         }
 
         void InitializeBuffers()
         {
-            var nodeSize = System.Runtime.InteropServices.Marshal.SizeOf(typeof(NodeData));
-            _nodeBuffer = new ComputeBuffer(1024 * 1024, nodeSize);
-            _visibleBuffer = new ComputeBuffer(1024 * 1024, sizeof(uint), ComputeBufferType.Append);
-            _argsBuffer = new ComputeBuffer(1024 * 1024, sizeof(uint), ComputeBufferType.IndirectArguments);
+            // 节点缓冲区（可容纳100万个节点）
+            nodeBuffer = new ComputeBuffer(1000000,
+                Marshal.SizeOf(typeof(NodeData)),
+                ComputeBufferType.Structured);
+
+            // 可见索引缓冲区
+            visibleBuffer = new ComputeBuffer(1000000, sizeof(int),
+                ComputeBufferType.Append);
+
+            // 间接参数缓冲区
+            argsBuffer = new ComputeBuffer(1, args.Length * sizeof(uint),
+                ComputeBufferType.IndirectArguments);
         }
 
-        private void Update()
+        void Update()
         {
-            // 1.更新四叉树结构
-            _quadTreeManager.UpdateQuadTree();
-            // 2.收集所有需要检测的节点
-            _allNodes.Clear();
-            CollectRenderAbleNodes(_quadTreeManager.Root);
-            // 3.准备GPU数据
             UpdateNodeBuffer();
-            // 4.执行GPU剔除
-            ExecuteGPUCulling();
-            // 5.执行间接绘制
-            RenderInstances();
+            DispatchGPUCulling();
+            RenderTerrain();
         }
 
-        private void RenderInstances()
+        void UpdateNodeBuffer()
         {
-            // 获取可见实例数量
-            ComputeBuffer.CopyCount(_visibleBuffer, _argsBuffer, 0);
+            QuadTreeManager treeManager = GetComponent<QuadTreeManager>();
+            NodeData[] nodeArray = new NodeData[treeManager.leafNodes.Count];
 
-            // 准备实例数据
-            MaterialPropertyBlock props = new MaterialPropertyBlock();
-            props.SetBuffer(NodeBuffer, _nodeBuffer);
-            props.SetBuffer(VisibleBuffer, _visibleBuffer);
+            for (int i = 0; i < treeManager.leafNodes.Count; i++)
+            {
+                nodeArray[i] = new NodeData
+                {
+                    center = treeManager.leafNodes[i].bounds.center,
+                    size = treeManager.leafNodes[i].bounds.size,
+                    lodLevel = treeManager.leafNodes[i].lodLevel
+                };
+            }
+
+            nodeBuffer.SetData(nodeArray);
+            cullingShader.SetInt(NodeCount, treeManager.leafNodes.Count);
+        }
+
+        void DispatchGPUCulling()
+        {
+            // 设置着色器参数
+            Matrix4x4 vpMatrix = Camera.main.projectionMatrix * Camera.main.worldToCameraMatrix;
+            cullingShader.SetMatrix(ViewProjMatrix, vpMatrix);
+            cullingShader.SetBuffer(cullingKernel, Nodes, nodeBuffer);
+            cullingShader.SetBuffer(cullingKernel, VisibleIndices, visibleBuffer);
+
+            // 执行计算着色器
+            int threadGroups = Mathf.CeilToInt(QuadTreeManager.leafNodes.Count / 64.0f);
+            cullingShader.Dispatch(cullingKernel, threadGroups, 1, 1);
+        }
+
+        void RenderTerrain()
+        {
+            // 准备绘制参数
+            args[0] = terrainMesh.GetIndexCount(0);
+            args[1] = (uint)visibleBuffer.count;
+            argsBuffer.SetData(args);
+
+            // 设置材质参数
+            terrainMaterial.SetBuffer(Nodes, nodeBuffer);
+            terrainMaterial.SetBuffer(VisibleIndices, visibleBuffer);
 
             // 间接绘制
-            Graphics.DrawMeshInstancedIndirect(terrainMesh,
+            Graphics.DrawMeshInstancedIndirect(
+                terrainMesh,
                 0,
                 terrainMaterial,
-                new Bounds(Vector3.zero, Vector3.one * 10000),
-                _argsBuffer,
-                0,
-                props);
+                new Bounds(Vector3.zero, QuadTreeManager.terrainSize),
+                argsBuffer
+            );
         }
 
-        private void ExecuteGPUCulling()
+        void OnDestroy()
         {
-            // 重制可见缓冲区
-            _visibleBuffer.SetCounterValue(0);
-
-            // 设置Shader参数
-            Matrix4x4 viewProj = MainCamera.projectionMatrix * MainCamera.worldToCameraMatrix;
-            CullingShader.SetMatrix(ViewProjMatrix, viewProj);
-            CullingShader.SetBuffer(0, Nodes, _nodeBuffer);
-            CullingShader.SetBuffer(0, VisibleInstances, _visibleBuffer);
-            CullingShader.SetFloat(NodeCount, _nodeBuffer.count);
-
-            // 分配线程
-            var threadGroups = Mathf.CeilToInt(_allNodes.Count / 64f);
-            CullingShader.Dispatch(0, threadGroups, 1, 1);
-        }
-
-        private void UpdateNodeBuffer()
-        {
-            NodeData[] nodeArray = new NodeData[_allNodes.Count];
-            for (int i = 0; i < _allNodes.Count; i++)
-            {
-                var node = nodeArray[i] = new NodeData();
-                node.Center = _allNodes[i].Bounds.center;
-                node.Size = _allNodes[i].Bounds.size;
-                node.LodLevel = node.LodLevel;
-            }
-
-            _nodeBuffer.SetData(nodeArray);
-        }
-
-        private void CollectRenderAbleNodes(QuadTreeNode node)
-        {
-            if (node.HasChildren)
-            {
-                foreach (var child in node.Children)
-                {
-                    CollectRenderAbleNodes(child);
-                }
-            }
-            else
-            {
-                _allNodes.Add(node);
-            }
+            nodeBuffer.Release();
+            visibleBuffer.Release();
+            argsBuffer.Release();
         }
     }
 }

@@ -2,114 +2,99 @@ using UnityEngine;
 
 namespace QuadTree
 {
+    using UnityEngine;
+
+    /// <summary>
+    /// 四叉树节点类
+    /// </summary>
     public class QuadTreeNode
     {
-        /// <summary>
-        /// 边界
-        /// </summary>
-        public Bounds Bounds { get; private set; }
+        // 节点边界
+        public Bounds bounds;
 
-        /// <summary>
-        /// 层级
-        /// </summary>
-        public int LODLevel { get; private set; }
+        // 当前LOD层级
+        public int lodLevel;
 
-        /// <summary>
-        /// 子节点
-        /// </summary>
-        public QuadTreeNode[] Children { get; private set; }
+        // 子节点数组
+        public QuadTreeNode[] children;
 
-        /// <summary>
-        /// 是否有子节点
-        /// </summary>
-        public bool HasChildren { get; private set; }
+        // 是否包含子节点
+        public bool hasChildren;
 
-        /// <summary>
-        /// 层级阈值
-        /// </summary>
-        private float[] LODThresholds { get; set; }
+        // LOD距离阈值
+        private float[] lodDistances;
 
-        /// <summary>
-        /// 最大深度
-        /// </summary>
-        private int MaxDepth { get; set; }
+        // 最大细分深度
+        private int maxDepth;
 
-        public QuadTreeNode(Bounds bounds, int lodLevel, float[] lodThreshold, int maxDepth)
+        // 分裂安全系数
+        private const float SplitMargin = 1.25f;
+
+        public QuadTreeNode(Bounds bounds, int lodLevel, float[] distances, int maxDepth)
         {
-            Bounds = bounds;
-            LODLevel = lodLevel;
-            LODThresholds = lodThreshold;
-            MaxDepth = maxDepth;
-            Children = new QuadTreeNode[4];
+            this.bounds = bounds;
+            this.lodLevel = lodLevel;
+            this.lodDistances = distances;
+            this.maxDepth = maxDepth;
+            children = new QuadTreeNode[4];
         }
 
         /// <summary>
-        /// 判断节点是否在视锥内
+        /// 更新节点状态
         /// </summary>
-        /// <param name="frustumPlanes"></param>
-        /// <returns></returns>
-        public bool IsInFrustum(Plane[] frustumPlanes)
-        {
-            return GeometryUtility.TestPlanesAABB(frustumPlanes, Bounds);
-        }
-
-        /// <summary>
-        /// 更新节点
-        /// </summary>
-        /// <param name="cameraPos"></param>
-        /// <param name="aoi"></param>
         public void Update(Vector3 cameraPos, Bounds aoi)
         {
-            var distance = Vector3.Distance(cameraPos, Bounds.center);
-            var needSplit = ShouldSplit(distance, aoi);
-            if (needSplit && !HasChildren && LODLevel < MaxDepth)
+            // 计算到摄像机的距离
+            float distance = Vector3.Distance(cameraPos, bounds.center);
+
+            // 判断是否需要分裂
+            if (ShouldSplit(distance, aoi) && !hasChildren && lodLevel < maxDepth)
             {
                 Split();
-                foreach (var child in Children)
-                {
+                foreach (var child in children)
                     child.Update(cameraPos, aoi);
-                }
             }
-            else if (!needSplit && HasChildren)
+            // 判断是否需要合并
+            else if (ShouldMerge(distance, aoi) && hasChildren)
             {
                 Merge();
             }
         }
 
-        /// <summary>
-        /// 判断是否需要分割
-        /// </summary>
-        /// <param name="distance"></param>
-        /// <param name="aoi"></param>
-        /// <returns></returns>
         private bool ShouldSplit(float distance, Bounds aoi)
         {
-            return distance > LODThresholds[LODLevel] && LODLevel < MaxDepth;
+            // 分裂条件：在AOI内且距离小于阈值
+            return aoi.Intersects(bounds) &&
+                   distance < lodDistances[lodLevel] * SplitMargin;
+        }
+
+        private bool ShouldMerge(float distance, Bounds aoi)
+        {
+            // 合并条件：在AOI外或距离超过阈值
+            return !aoi.Intersects(bounds) ||
+                   distance > lodDistances[lodLevel] * 1.5f;
         }
 
         private void Split()
         {
-            var size = Bounds.size / 2;
-            var center = Bounds.center;
-            Children[0] =
-                new QuadTreeNode(new Bounds(center + new Vector3(-size.x / 2, 0, -size.z / 2), size),
-                    LODLevel + 1, LODThresholds, MaxDepth);
-            Children[1] =
-                new QuadTreeNode(new Bounds(center + new Vector3(size.x / 2, 0, -size.z / 2), size),
-                    LODLevel + 1, LODThresholds, MaxDepth);
-            Children[2] =
-                new QuadTreeNode(new Bounds(center + new Vector3(-size.x / 2, 0, size.z / 2), size),
-                    LODLevel + 1, LODThresholds, MaxDepth);
-            Children[3] =
-                new QuadTreeNode(new Bounds(center + new Vector3(size.x / 2, 0, size.z / 2), size),
-                    LODLevel + 1, LODThresholds, MaxDepth);
-            HasChildren = true;
+            Vector3 halfSize = bounds.size * 0.5f;
+            Vector3 center = bounds.center;
+
+            // 创建四个子节点
+            for (var i = 0; i < 4; i++)
+            {
+                children[i] = new QuadTreeNode(
+                    new Bounds(new Vector3(center.x - halfSize.x / 2, 0, center.z - halfSize.z / 2), halfSize),
+                    lodLevel + 1, lodDistances, maxDepth);
+            }
+
+            hasChildren = true;
         }
 
         private void Merge()
         {
-            HasChildren = false;
-            Children = new QuadTreeNode[4];
+            hasChildren = false;
+            children = new QuadTreeNode[4];
         }
     }
 }

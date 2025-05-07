@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Jobs;
 using UnityEngine;
+using UnityEngine;
+using System.Collections.Generic;
 
 namespace QuadTree
 {
@@ -13,85 +15,98 @@ namespace QuadTree
 
         public void Execute(int index)
         {
-            VisibleResults[index] = GeometryUtility.TestPlanesAABB(FrustumPlanes.ToArray(), NodeBounds[index]);
+            Bounds bounds = NodeBounds[index];
+            for (int i = 0; i < FrustumPlanes.Length; i++)
+            {
+                Plane plane = FrustumPlanes[i];
+                Vector3 positiveVertex = bounds.center;
+                if (plane.normal.x >= 0)
+                    positiveVertex.x += bounds.extents.x;
+                else
+                    positiveVertex.x -= bounds.extents.x;
+
+                if (plane.normal.y >= 0)
+                    positiveVertex.y += bounds.extents.y;
+                else
+                    positiveVertex.y -= bounds.extents.y;
+
+                if (plane.normal.z >= 0)
+                    positiveVertex.z += bounds.extents.z;
+                else
+                    positiveVertex.z -= bounds.extents.z;
+
+                if (plane.GetDistanceToPoint(positiveVertex) < 0)
+                {
+                    VisibleResults[index] = false;
+                    return;
+                }
+            }
+
+            VisibleResults[index] = true;
         }
     }
 
+
+    /// <summary>
+    /// 四叉树管理系统
+    /// </summary>
     public class QuadTreeManager : MonoBehaviour
     {
-        /// <summary>
-        /// 四叉树根结点
-        /// </summary>
-        public QuadTreeNode Root { get; private set; }
+        [Header("Tree Settings")] [SerializeField]
+        public Vector2 terrainSize = new Vector2(2000, 2000);
 
-        // 四叉树更新控制参数
-        public float SplitMargin { get; private set; } = 1.2f;
-        public float MergeThreshold { get; private set; } = 0.8f;
-        public float UpdateInterval { get; private set; } = 0.1f;
-        private float _lastUpdateTIme;
+        public int maxDepth = 6;
+        public float[] lodDistances = { 500f, 200f, 100f, 50f };
 
-        private List<Matrix4x4>[] _lodInstances;
-        private Camera _mainCamera;
-        private readonly Plane[] _frustumPlanes = new Plane[6];
+        [Header("AOI Settings")] [SerializeField]
+        public Vector2 aoiSize = new Vector2(300f, 300f);
 
-        private NativeArray<Plane> _nativeFrustumPlanes;
-        private NativeArray<Bounds> _nodeBounds;
-        private NativeArray<bool> _visibleResults;
-        private JobHandle _cullingJobHandle;
+        public QuadTreeNode root;
+        [SerializeField] public Transform cameraTransform;
 
-        private const int MaxNodeCount = 1000;
-
+        // 所有叶子节点列表
+        [HideInInspector] public List<QuadTreeNode> leafNodes = new List<QuadTreeNode>();
 
         void Start()
         {
-            // 初始化NativeArray
-            _nativeFrustumPlanes = new NativeArray<Plane>(6, Allocator.Persistent);
-            _nodeBounds = new NativeArray<Bounds>(MaxNodeCount, Allocator.Persistent);
-            _visibleResults = new NativeArray<bool>(MaxNodeCount, Allocator.Persistent);
+            InitializeTree();
+        }
+
+        void InitializeTree()
+        {
+            Bounds rootBounds = new Bounds(
+                Vector3.zero,
+                new Vector3(terrainSize.x, 0, terrainSize.y));
+
+            root = new QuadTreeNode(rootBounds, 0, lodDistances, maxDepth);
         }
 
         void Update()
         {
-            // 准备数据
-            _nativeFrustumPlanes.CopyFrom(_frustumPlanes);
-
-            // 调度job
-            var job = new FrustumCullingJob();
-            job.NodeBounds = _nodeBounds;
-            job.FrustumPlanes = _nativeFrustumPlanes;
-            job.VisibleResults = _visibleResults;
-
-            _cullingJobHandle = job.Schedule(_nodeBounds.Length, 64);
+            UpdateTree();
+            CollectLeafNodes(root);
         }
 
-        void LateUpdate()
+        void UpdateTree()
         {
-            _cullingJobHandle.Complete();
+            Bounds aoi = new Bounds(
+                cameraTransform.position,
+                new Vector3(aoiSize.x, 100f, aoiSize.y));
 
-            // 处理可见性结果
-            var length = _visibleResults.Length;
-            for (var i = 0; i < length; i++)
+            root.Update(cameraTransform.position, aoi);
+        }
+
+        void CollectLeafNodes(QuadTreeNode node)
+        {
+            if (node.hasChildren)
             {
-                if (_visibleResults[i])
-                {
-                    // 添加到渲染列表
-                    Debug.Log("Add Instance");
-                }
+                foreach (var child in node.children)
+                    CollectLeafNodes(child);
             }
-        }
-
-        private void OnDestroy()
-        {
-            _nativeFrustumPlanes.Dispose();
-            _nodeBounds.Dispose();
-            _visibleResults.Dispose();
-        }
-
-        public void UpdateQuadTree()
-        {
-            if (Time.time - _lastUpdateTIme < UpdateInterval)
+            else
             {
-                return;
+                if (!leafNodes.Contains(node))
+                    leafNodes.Add(node);
             }
         }
     }
