@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Scan
-  m_Shader: {fileID: 4800000, guid: 29e4f55f3f1fc3f4c9d815f10ba7ff0d, type: 3}
+  m_Shader: {fileID: 4800000, guid: 46786ab4e2f41467fb0d423fbf91cd7c, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -44,7 +44,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _FlowEmmis:
-        m_Texture: {fileID: 2800000, guid: 2e0c0bf95808863479b81a331573c6ea, type: 3}
+        m_Texture: {fileID: 2800000, guid: 9a0227f97feaa4b32b98973352ad6a3a, type: 3}
         m_Scale: {x: 0.56, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:

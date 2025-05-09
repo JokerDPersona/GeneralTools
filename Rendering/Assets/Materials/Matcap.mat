@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Matcap
-  m_Shader: {fileID: 4800000, guid: c7ae2601717b25b468788aefd11e2072, type: 3}
+  m_Shader: {fileID: 4800000, guid: 63d8df904e5d748c29043c06f6bf99af, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -40,7 +40,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Diffuse:
-        m_Texture: {fileID: 2800000, guid: a5fa31d7a2d9fb143b4842225acab5b5, type: 3}
+        m_Texture: {fileID: 2800000, guid: 62c2ba4fc2de34cd9b472cb36df263b5, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _EmissionMap:
@@ -52,7 +52,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MatCap:
-        m_Texture: {fileID: 2800000, guid: ec269f669d348394f97aaa88886fb4be, type: 3}
+        m_Texture: {fileID: 2800000, guid: 4a97d2be69b8e4f88a7c0095c5a8d3e8, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
@@ -68,7 +68,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _TextureSample0:
-        m_Texture: {fileID: 2800000, guid: 46d52a190d79cec48baba9d14daecef0, type: 3}
+        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _texcoord:

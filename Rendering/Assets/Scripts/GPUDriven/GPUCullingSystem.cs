@@ -95,7 +95,7 @@ namespace QuadTree
 
             // 执行计算着色器
             int threadGroups = Mathf.CeilToInt(QuadTreeManager.leafNodes.Count / 64.0f);
-            cullingShader.Dispatch(cullingKernel, threadGroups, 1, 1);
+                cullingShader.Dispatch(cullingKernel, threadGroups, 1, 1);
         }
 
         void RenderTerrain()

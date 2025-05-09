@@ -247,8 +247,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   cullingShader: {fileID: 7200000, guid: 0f605d59477f64d76a0eb56b7f989a3f, type: 3}
-  terrainMesh: {fileID: 10210, guid: 0000000000000000e000000000000000, type: 0}
-  terrainMaterial: {fileID: 10302, guid: 0000000000000000f000000000000000, type: 0}
+  terrainMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+  terrainMaterial: {fileID: 2100000, guid: 8b9f8b694c2d344cbb63da982d62339e, type: 2}
 --- !u!114 &739087973
 MonoBehaviour:
   m_ObjectHideFlags: 0
