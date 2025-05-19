@@ -15,6 +15,10 @@ cbuffer CullingParams
     int nodeCount;
 };
 
+// LOD距离参数
+float _LODDistances[8];
+float3 _CameraPos;
+
 // 输入输出缓冲区
 StructuredBuffer<NodeData> _Nodes;
 AppendStructuredBuffer<int> _VisibleIndices;
@@ -64,7 +68,19 @@ void FrustumCulling(uint3 id : SV_DispatchThreadID)
     if (idx >= nodeCount) return;
 
     NodeData node = _Nodes[idx];
+
+    // 1.LOD距离剔除
+    float dist = distance(node.center, _CameraPos);
+    if (dist > _LODDistances[node.lodLevel])
+    {
+        return;
+    }
+    // 2.视锥体剔除
     float3 extents = node.size * 0.5;
+    if (!IsVisible(node.center, extents))
+    {
+        return;
+    }
 
     if (IsVisible(node.center, extents))
     {

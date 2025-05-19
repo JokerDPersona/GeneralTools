@@ -2,8 +2,6 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Jobs;
 using UnityEngine;
-using UnityEngine;
-using System.Collections.Generic;
 
 namespace QuadTree
 {
@@ -55,6 +53,8 @@ namespace QuadTree
         [Header("Tree Settings")] [SerializeField]
         public Vector2 terrainSize = new Vector2(2000, 2000);
 
+        [Range(0.1f, 2.0f)] public float treeUpdateInterval = 0.5f;
+
         public int maxDepth = 6;
         public float[] lodDistances = { 500f, 200f, 100f, 50f };
 
@@ -66,6 +66,8 @@ namespace QuadTree
 
         // 所有叶子节点列表
         [HideInInspector] public List<QuadTreeNode> leafNodes = new List<QuadTreeNode>();
+
+        private float lastTreeUpdate;
 
         void Start()
         {
@@ -83,7 +85,13 @@ namespace QuadTree
 
         void Update()
         {
-            UpdateTree();
+            // 降低四叉树更新频率
+            if (Time.time - lastTreeUpdate > treeUpdateInterval)
+            {
+                UpdateTree();
+                lastTreeUpdate = Time.time;
+            }
+
             CollectLeafNodes(root);
         }
 
@@ -107,6 +115,16 @@ namespace QuadTree
             {
                 if (!leafNodes.Contains(node))
                     leafNodes.Add(node);
+            }
+        }
+
+        // 在QuadTreeManager中添加调试绘制
+        void OnDrawGizmosSelected()
+        {
+            Gizmos.color = Color.green;
+            foreach (var node in leafNodes)
+            {
+                Gizmos.DrawWireCube(node.bounds.center, node.bounds.size);
             }
         }
     }
