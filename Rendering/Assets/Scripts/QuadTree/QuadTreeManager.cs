@@ -119,13 +119,13 @@ namespace QuadTree
         }
 
         // 在QuadTreeManager中添加调试绘制
-        void OnDrawGizmosSelected()
-        {
-            Gizmos.color = Color.green;
-            foreach (var node in leafNodes)
-            {
-                Gizmos.DrawWireCube(node.bounds.center, node.bounds.size);
-            }
-        }
+        // void OnDrawGizmosSelected()
+        // {
+        //     Gizmos.color = Color.green;
+        //     foreach (var node in leafNodes)
+        //     {
+        //         Gizmos.DrawWireCube(node.bounds.center, node.bounds.size);
+        //     }
+        // }
     }
 }

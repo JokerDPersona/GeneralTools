@@ -10,10 +10,15 @@ Shader "Custom/TerrainInstanced"
         Tags
         {
             "RenderType"="Opaque"
+            "Queue" = "Geometry"
         }
 
         Pass
         {
+            ZWrite On
+            ZTest LEqual
+            Cull Back
+
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
@@ -66,6 +71,8 @@ Shader "Custom/TerrainInstanced"
 
             fixed4 frag(v2f i) : SV_Target
             {
+                //return float4(1,0,0,1); // 显示红色
+                //return float4(i.uv.x, i.uv.y, 0, 1); // 测试uv
                 return tex2D(_MainTex, i.uv);
             }
             ENDCG
